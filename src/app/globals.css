@@ -1,0 +1,603 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  /* Removed the global '*' rule that applied 'border-border' to all elements */
+  body {
+    @apply bg-background text-foreground;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  main {
+    flex: 1;
+  }
+}
+
+@layer base {
+  /* Light Mode */
+  :root {
+    --background: 0 0% 100%; /* White */
+    --foreground: 220 25% 15%; /* Dark Gray */
+
+    --card: 220 13% 96%; /* Very light gray, almost white */
+    --card-foreground: 220 25% 10%; /* Dark gray for text on cards */
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 10%;
+
+    --primary: 260 65% 60%; /* Vibrant modern Indigo/Purple */
+    --primary-foreground: 0 0% 100%; /* White text on primary */
+
+    --secondary: 220 10% 90%; /* Lighter gray */
+    --secondary-foreground: 220 20% 30%; /* Darker gray for text on secondary */
+
+    --muted: 220 10% 92%;
+    --muted-foreground: 220 15% 55%; /* Softer muted text */
+
+    /* Accent: Used for hover backgrounds (e.g., outline/ghost buttons) - needs to be light/faded */
+    --accent: 260 70% 97%; /* Very light, slightly desaturated primary, even lighter */
+    --accent-foreground: 260 60% 50%; /* Darker, muted primary for text on light accent */
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 88%; /* Softer border */
+    --input: 220 13% 91%;
+    --ring: 260 65% 65%; /* Primary color for focus rings */
+
+    --radius: 0.75rem; /* Slightly more rounded */
+
+    /* Chart colors (can be adjusted if charts are used) */
+    --chart-1: 220 70% 50%;
+    --chart-2: 180 50% 45%;
+    --chart-3: 30 70% 50%;
+    --chart-4: 280 60% 55%;
+    --chart-5: 340 70% 55%;
+
+    /* Sidebar specific colors - Light */
+    --sidebar-background: 220 15% 97%; /* Slightly off-white, distinct from main bg */
+    --sidebar-foreground: 220 20% 25%; /* Dark text for sidebar */
+    --sidebar-primary: 260 65% 60%; /* Consistent with main primary */
+    --sidebar-primary-foreground: 0 0% 100%;
+    /* Sidebar Accent: Used for history item hover background - very subtle */
+    --sidebar-accent: 220 20% 98%; /* Extremely light gray, almost white, very subtle hover */
+    --sidebar-accent-foreground: 260 65% 58%; /* Primary color for text on sidebar hover - slightly lighter */
+    --sidebar-border: 220 13% 85%;
+    --sidebar-ring: 260 65% 65%;
+
+    /* --- CHAT THEME TOKENS --- */
+    /* Chat Header */
+    --theme-chat-header-height: 4rem; /* 64px */
+    --theme-chat-header-padding-x: 1rem;
+    --theme-chat-header-padding-y: 0.75rem;
+    --theme-chat-header-background: hsl(var(--background));
+    --theme-chat-header-border-color: hsl(var(--border));
+    --theme-chat-header-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --theme-chat-header-icon-button-size: 2.5rem; /* 40px */
+    --theme-chat-header-icon-size: 1.5rem; /* 24px */
+    --theme-chat-header-icon-color: hsl(var(--muted-foreground));
+    --theme-chat-header-icon-color-hover: hsl(var(--foreground));
+    --theme-chat-header-avatar-size: 2rem; /* 32px */
+    --theme-chat-header-avatar-border-width: 1px;
+    --theme-chat-header-avatar-background: hsl(var(--muted));
+    --theme-chat-header-avatar-text-color: hsl(var(--muted-foreground));
+    --theme-chat-header-avatar-font-size: 0.875rem; /* 14px */
+    --theme-chat-header-username-font-size: 0.875rem; /* 14px */
+    --theme-chat-header-username-font-weight: 500;
+    --theme-chat-header-username-color: hsl(var(--foreground));
+
+    /* Chat Input Bar */
+    --theme-chat-input-bar-background: hsl(var(--card));
+    --theme-chat-input-bar-border-color: hsl(var(--border));
+    --theme-chat-input-bar-border-radius: 0.75rem; /* 12px */
+    --theme-chat-input-bar-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --theme-chat-input-bar-padding: 0.625rem; /* 10px */
+    --theme-chat-input-bar-textarea-background: transparent;
+    --theme-chat-input-bar-textarea-border: none;
+    --theme-chat-input-bar-textarea-min-height: 1.5rem; /* 24px */
+    --theme-chat-input-bar-textarea-max-height: 6.25rem; /* 100px */
+    --theme-chat-input-bar-textarea-font-size: 1rem; /* 16px */
+    --theme-chat-input-bar-textarea-padding-x: 0;
+    --theme-chat-input-bar-textarea-padding-y: 0.25rem;
+    --theme-chat-input-bar-textarea-placeholder-color: hsla(var(--muted-foreground), 0.7);
+    --theme-chat-input-bar-plus-button-size: 2rem; /* 32px */
+    --theme-chat-input-bar-plus-button-icon-size: 1.25rem; /* 20px */
+    --theme-chat-input-bar-plus-button-border-radius: 9999px;
+    --theme-chat-input-bar-plus-button-text-color: hsl(var(--muted-foreground));
+    --theme-chat-input-bar-plus-button-text-color-hover: hsl(var(--primary));
+    --theme-chat-input-bar-plus-button-background-color-hover: hsl(var(--accent));
+    --theme-chat-input-bar-send-button-size: 2.25rem; /* 36px */
+    --theme-chat-input-bar-send-button-icon-size: 1rem; /* 16px */
+    --theme-chat-input-bar-send-button-border-radius: 9999px;
+    --theme-chat-input-bar-send-button-background-color: hsl(var(--primary));
+    --theme-chat-input-bar-send-button-background-color-hover: hsla(var(--primary), 0.9);
+    --theme-chat-input-bar-send-button-text-color: hsl(var(--primary-foreground));
+    --theme-chat-input-bar-mic-button-background-color: transparent;
+    --theme-chat-input-bar-mic-button-background-color-hover: hsl(var(--accent));
+    --theme-chat-input-bar-mic-button-text-color: hsl(var(--muted-foreground));
+    --theme-chat-input-bar-mic-button-text-color-hover: hsl(var(--primary));
+    --theme-chat-input-bar-mic-button-listening-color: hsl(var(--destructive));
+    --theme-chat-input-bar-mic-button-listening-background-color: hsla(var(--destructive), 0.1);
+
+
+    /* Message Bubbles & Items */
+    --theme-user-bubble-background: hsl(var(--primary));
+    --theme-user-bubble-text-color: hsl(var(--primary-foreground));
+    --theme-user-bubble-padding: 0.875rem; /* 14px */
+    --theme-user-bubble-border-radius-top: 1.25rem; /* 20px */
+    --theme-user-bubble-border-radius-bottom-left: 1.25rem; /* 20px */
+    --theme-user-bubble-timestamp-color: hsla(var(--primary-foreground), 0.7);
+    --theme-user-bubble-timestamp-font-size: 0.75rem; /* 12px */
+    --theme-user-bubble-timestamp-margin-top: 0.5rem; /* 8px */
+
+    --theme-assistant-bubble-background: hsl(var(--card));
+    --theme-assistant-bubble-text-color: hsl(var(--card-foreground));
+    --theme-assistant-bubble-padding: 0.875rem; /* 14px */
+    --theme-assistant-bubble-border-radius-top: 1.25rem; /* 20px */
+    --theme-assistant-bubble-border-radius-bottom-right: 1.25rem; /* 20px */
+    --theme-assistant-bubble-timestamp-color: hsla(var(--card-foreground), 0.7);
+    --theme-assistant-bubble-timestamp-font-size: 0.75rem; /* 12px */
+    --theme-assistant-bubble-timestamp-margin-top: 0.5rem; /* 8px */
+
+    --theme-assistant-avatar-size: 2rem; /* 32px */
+    --theme-assistant-avatar-border-width: 1px;
+    --theme-assistant-avatar-border-color: hsl(var(--border));
+    --theme-assistant-avatar-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --theme-assistant-avatar-fallback-background: hsl(var(--card));
+    --theme-assistant-avatar-icon-color: hsl(var(--primary));
+    --theme-assistant-avatar-icon-size: 1.25rem; /* 20px */
+    --theme-assistant-loading-text-color: hsl(var(--muted-foreground));
+    --theme-assistant-loading-font-size: 0.875rem; /* 14px */
+    --theme-assistant-loading-font-style: italic;
+  
+    /* Sidebar Panel & Items */
+    --theme-sidebar-panel-width: 18rem; /* 288px */
+    --theme-sidebar-panel-background: hsl(var(--sidebar-background));
+    --theme-sidebar-panel-text-color: hsl(var(--sidebar-foreground));
+    --theme-sidebar-panel-border-color: hsl(var(--sidebar-border));
+    --theme-sidebar-header-height: 4rem; /* 64px */
+    --theme-sidebar-header-padding: 0.75rem; /* 12px */
+    --theme-sidebar-header-border-color: hsl(var(--sidebar-border));
+    --theme-sidebar-header-title-font-size: 1.125rem; /* 18px */
+    --theme-sidebar-header-title-font-weight: 600;
+    --theme-sidebar-header-icon-color: hsl(var(--sidebar-primary));
+    --theme-sidebar-header-icon-size: 1.25rem; /* 20px */
+    --theme-sidebar-header-close-icon-color: hsl(var(--muted-foreground));
+    --theme-sidebar-header-close-icon-color-hover: hsl(var(--foreground));
+    --theme-sidebar-new-chat-button-container-padding: 0.75rem;
+    --theme-sidebar-new-chat-button-background-color: transparent;
+    --theme-sidebar-new-chat-button-background-color-hover: hsl(var(--sidebar-accent));
+    --theme-sidebar-new-chat-button-text-color: hsl(var(--sidebar-foreground));
+    --theme-sidebar-new-chat-button-text-color-hover: hsl(var(--sidebar-accent-foreground));
+    --theme-sidebar-new-chat-button-border-color: hsl(var(--sidebar-border));
+    --theme-sidebar-new-chat-button-border-color-hover: hsl(var(--sidebar-border));
+    --theme-sidebar-new-chat-button-icon-color: hsl(var(--sidebar-foreground));
+    --theme-sidebar-new-chat-button-icon-color-hover: hsl(var(--sidebar-accent-foreground));
+    --theme-sidebar-new-chat-button-font-size: 0.875rem;
+    --theme-sidebar-content-padding: 0.75rem;
+    --theme-sidebar-footer-padding: 0.75rem;
+    --theme-sidebar-footer-border-color: hsl(var(--sidebar-border));
+    --theme-sidebar-clear-button-background-color: transparent;
+    --theme-sidebar-clear-button-background-color-hover: hsla(var(--destructive), 0.1);
+    --theme-sidebar-clear-button-text-color: hsl(var(--destructive));
+    --theme-sidebar-clear-button-text-color-hover: hsl(var(--destructive));
+    --theme-sidebar-clear-button-icon-color: hsl(var(--destructive));
+    --theme-sidebar-clear-button-icon-color-hover: hsl(var(--destructive));
+    --theme-sidebar-clear-button-font-size: 0.875rem;
+    
+    /* Sidebar Item */
+    --theme-sidebar-item-padding: 0.625rem; /* 10px */
+    --theme-sidebar-item-border-radius: 0.5rem; /* 8px */
+    --theme-sidebar-item-font-size: 0.875rem; /* 14px */
+    --theme-sidebar-item-background-hover: hsl(var(--sidebar-accent));
+    --theme-sidebar-item-text-color-hover: hsl(var(--sidebar-foreground));
+    --theme-sidebar-item-background-active: hsla(var(--sidebar-primary), 0.2);
+    --theme-sidebar-item-text-color-active: hsl(var(--sidebar-primary));
+    --theme-sidebar-item-font-weight-active: 500;
+    --theme-sidebar-item-icon-color: hsl(var(--muted-foreground));
+    --theme-sidebar-item-icon-color-hover: hsl(var(--sidebar-accent-foreground));
+    --theme-sidebar-item-icon-color-active: hsl(var(--sidebar-primary));
+    --theme-sidebar-item-delete-button-color: hsl(var(--muted-foreground));
+    --theme-sidebar-item-delete-button-color-hover: hsl(var(--destructive));
+  }
+
+  /* Dark Mode */
+  .dark {
+    --background: 220 25% 6%;
+    --foreground: 210 40% 98%;
+    --card: 220 20% 12%;
+    --card-foreground: 210 35% 92%;
+    --popover: 220 25% 8%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 260 70% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 18%;
+    --secondary-foreground: 210 40% 80%;
+    --muted: 220 15% 20%;
+    --muted-foreground: 210 25% 70%;
+    --accent: 260 50% 16%;
+    --accent-foreground: 260 70% 80%;
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 20%;
+    --input: 220 15% 15%;
+    --ring: 260 70% 70%;
+    --sidebar-background: 220 22% 8%;
+    --sidebar-foreground: 210 35% 90%;
+    --sidebar-primary: 260 70% 65%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 25% 12%;
+    --sidebar-accent-foreground: 260 70% 75%;
+    --sidebar-border: 220 15% 18%;
+    --sidebar-ring: 260 70% 70%;
+
+    /* --- DARK CHAT THEME TOKENS --- */
+    --theme-chat-header-background: hsl(var(--background));
+    --theme-chat-header-border-color: hsl(var(--border));
+    --theme-chat-header-icon-color: hsl(var(--muted-foreground));
+    --theme-chat-header-icon-color-hover: hsl(var(--foreground));
+    --theme-chat-header-avatar-background: hsl(var(--muted));
+    --theme-chat-header-avatar-text-color: hsl(var(--muted-foreground));
+    --theme-chat-header-username-color: hsl(var(--foreground));
+    
+    --theme-chat-input-bar-background: hsl(var(--card));
+    --theme-chat-input-bar-border-color: hsl(var(--border));
+    --theme-chat-input-bar-textarea-placeholder-color: hsla(var(--muted-foreground), 0.7);
+    --theme-chat-input-bar-plus-button-text-color: hsl(var(--muted-foreground));
+    --theme-chat-input-bar-plus-button-text-color-hover: hsl(var(--primary));
+    --theme-chat-input-bar-plus-button-background-color-hover: hsl(var(--accent));
+    --theme-chat-input-bar-send-button-background-color: hsl(var(--primary));
+    --theme-chat-input-bar-send-button-background-color-hover: hsla(var(--primary), 0.9);
+    --theme-chat-input-bar-send-button-text-color: hsl(var(--primary-foreground));
+    --theme-chat-input-bar-mic-button-background-color-hover: hsl(var(--accent));
+    --theme-chat-input-bar-mic-button-text-color: hsl(var(--muted-foreground));
+    --theme-chat-input-bar-mic-button-text-color-hover: hsl(var(--primary));
+    --theme-chat-input-bar-mic-button-listening-color: hsl(var(--destructive));
+    --theme-chat-input-bar-mic-button-listening-background-color: hsla(var(--destructive), 0.1);
+    
+    --theme-user-bubble-background: hsl(var(--primary));
+    --theme-user-bubble-text-color: hsl(var(--primary-foreground));
+    --theme-user-bubble-timestamp-color: hsla(var(--primary-foreground), 0.7);
+    
+    --theme-assistant-bubble-background: hsl(var(--card));
+    --theme-assistant-bubble-text-color: hsl(var(--card-foreground));
+    --theme-assistant-bubble-timestamp-color: hsla(var(--card-foreground), 0.7);
+
+    --theme-assistant-avatar-border-color: hsl(var(--border));
+    --theme-assistant-avatar-fallback-background: hsl(var(--card));
+    --theme-assistant-avatar-icon-color: hsl(var(--primary));
+    --theme-assistant-loading-text-color: hsl(var(--muted-foreground));
+  }
+}
+
+@layer components {
+  /* Chat Header Theming */
+  .theme-chat-header {
+    @apply flex items-center justify-between border-b sticky top-0 z-10;
+    height: var(--theme-chat-header-height);
+    padding-left: var(--theme-chat-header-padding-x);
+    padding-right: var(--theme-chat-header-padding-x);
+    padding-top: var(--theme-chat-header-padding-y);
+    padding-bottom: var(--theme-chat-header-padding-y);
+    background-color: var(--theme-chat-header-background);
+    border-color: var(--theme-chat-header-border-color);
+    box-shadow: var(--theme-chat-header-shadow);
+  }
+  .theme-chat-header-icon-button {
+    @apply h-10 w-10 flex items-center justify-center rounded-md;
+    color: var(--theme-chat-header-icon-color);
+  }
+  .theme-chat-header-icon-button:hover {
+    color: var(--theme-chat-header-icon-color-hover);
+  }
+  .theme-chat-header-icon-button > svg {
+    height: var(--theme-chat-header-icon-size);
+    width: var(--theme-chat-header-icon-size);
+  }
+  .theme-chat-header-avatar {
+    @apply flex items-center justify-center rounded-full;
+    height: var(--theme-chat-header-avatar-size);
+    width: var(--theme-chat-header-avatar-size);
+    border-width: var(--theme-chat-header-avatar-border-width);
+    background-color: var(--theme-chat-header-avatar-background);
+    color: var(--theme-chat-header-avatar-text-color);
+    font-size: var(--theme-chat-header-avatar-font-size);
+  }
+  .theme-chat-header-username {
+    @apply hidden sm:inline;
+    font-size: var(--theme-chat-header-username-font-size);
+    font-weight: var(--theme-chat-header-username-font-weight);
+    color: var(--theme-chat-header-username-color);
+  }
+
+  /* Chat Input Bar Theming */
+  .chat-input-bar-textarea-theme {
+      @apply flex-grow resize-none border-none bg-transparent p-0 placeholder:text-muted-foreground/70 focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 focus-visible:ring-offset-0 focus:border-transparent;
+      min-height: var(--theme-chat-input-bar-textarea-min-height);
+      max-height: var(--theme-chat-input-bar-textarea-max-height);
+      font-size: var(--theme-chat-input-bar-textarea-font-size);
+      padding-left: var(--theme-chat-input-bar-textarea-padding-x);
+      padding-right: var(--theme-chat-input-bar-textarea-padding-x);
+      padding-top: var(--theme-chat-input-bar-textarea-padding-y);
+      padding-bottom: var(--theme-chat-input-bar-textarea-padding-y);
+  }
+
+  .chat-input-bar-plus-button-theme {
+    @apply flex items-center justify-center shrink-0;
+    height: var(--theme-chat-input-bar-plus-button-size);
+    width: var(--theme-chat-input-bar-plus-button-size);
+    color: var(--theme-chat-input-bar-plus-button-text-color);
+    border-radius: var(--theme-chat-input-bar-plus-button-border-radius);
+  }
+  .chat-input-bar-plus-button-theme:hover {
+    color: var(--theme-chat-input-bar-plus-button-text-color-hover);
+    background-color: var(--theme-chat-input-bar-plus-button-background-color-hover);
+  }
+  .chat-input-bar-plus-button-theme > svg {
+      width: var(--theme-chat-input-bar-plus-button-icon-size);
+      height: var(--theme-chat-input-bar-plus-button-icon-size);
+  }
+
+  .chat-input-bar-send-button-theme {
+      @apply flex items-center justify-center shrink-0 disabled:opacity-50;
+      height: var(--theme-chat-input-bar-send-button-size);
+      width: var(--theme-chat-input-bar-send-button-size);
+      border-radius: var(--theme-chat-input-bar-send-button-border-radius);
+      background-color: var(--theme-chat-input-bar-send-button-background-color);
+      color: var(--theme-chat-input-bar-send-button-text-color);
+  }
+  .chat-input-bar-send-button-theme:hover:not(:disabled) {
+      background-color: var(--theme-chat-input-bar-send-button-background-color-hover);
+  }
+  .chat-input-bar-send-button-theme > svg {
+      height: var(--theme-chat-input-bar-send-button-icon-size);
+      width: var(--theme-chat-input-bar-send-button-icon-size);
+  }
+  
+  .chat-input-bar-mic-button-theme {
+    @apply flex items-center justify-center shrink-0 disabled:opacity-50;
+    height: var(--theme-chat-input-bar-send-button-size);
+    width: var(--theme-chat-input-bar-send-button-size);
+    border-radius: var(--theme-chat-input-bar-send-button-border-radius);
+    background-color: var(--theme-chat-input-bar-mic-button-background-color);
+    color: var(--theme-chat-input-bar-mic-button-text-color);
+  }
+  .chat-input-bar-mic-button-theme:hover:not(:disabled) {
+    background-color: var(--theme-chat-input-bar-mic-button-background-color-hover);
+    color: var(--theme-chat-input-bar-mic-button-text-color-hover);
+  }
+  .chat-input-bar-mic-button-theme.listening {
+    color: var(--theme-chat-input-bar-mic-button-listening-color);
+    background-color: var(--theme-chat-input-bar-mic-button-listening-background-color);
+  }
+  .chat-input-bar-mic-button-theme > svg {
+      height: var(--theme-chat-input-bar-send-button-icon-size);
+      width: var(--theme-chat-input-bar-send-button-icon-size);
+  }
+
+  /* Voice Chat Modal Animations */
+  .voice-chat-pulse {
+    animation: voice-chat-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes voice-chat-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.5;
+      transform: scale(1.05);
+    }
+  }
+
+  .voice-chat-listening {
+    animation: voice-chat-listening 1.5s ease-in-out infinite;
+  }
+
+  @keyframes voice-chat-listening {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.1);
+    }
+  }
+
+  .voice-chat-speaking {
+    animation: voice-chat-speaking 0.8s ease-in-out infinite;
+  }
+
+  @keyframes voice-chat-speaking {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.05);
+    }
+  }
+
+  /* Message Theming */
+  .theme-user-bubble {
+      @apply max-w-[75%] flex flex-col;
+      background-color: var(--theme-user-bubble-background);
+      color: var(--theme-user-bubble-text-color);
+      padding: var(--theme-user-bubble-padding);
+      border-top-left-radius: var(--theme-user-bubble-border-radius-top);
+      border-top-right-radius: var(--theme-user-bubble-border-radius-top);
+      border-bottom-left-radius: var(--theme-user-bubble-border-radius-bottom-left);
+  }
+  .theme-user-bubble-timestamp {
+      @apply text-right opacity-70;
+      color: var(--theme-user-bubble-timestamp-color);
+      font-size: var(--theme-user-bubble-timestamp-font-size);
+      margin-top: var(--theme-user-bubble-timestamp-margin-top);
+  }
+
+  .theme-assistant-bubble {
+      @apply max-w-[75%] flex flex-col;
+      background-color: var(--theme-assistant-bubble-background);
+      color: var(--theme-assistant-bubble-text-color);
+      padding: var(--theme-assistant-bubble-padding);
+      border-top-left-radius: var(--theme-assistant-bubble-border-radius-top);
+      border-top-right-radius: var(--theme-assistant-bubble-border-radius-top);
+      border-bottom-right-radius: var(--theme-assistant-bubble-border-radius-bottom-right);
+  }
+  .theme-assistant-bubble-timestamp {
+      @apply text-left opacity-70;
+      color: var(--theme-assistant-bubble-timestamp-color);
+      font-size: var(--theme-assistant-bubble-timestamp-font-size);
+      margin-top: var(--theme-assistant-bubble-timestamp-margin-top);
+  }
+
+  .theme-assistant-avatar {
+      @apply flex items-center justify-center rounded-full shrink-0;
+      height: var(--theme-assistant-avatar-size);
+      width: var(--theme-assistant-avatar-size);
+      border-width: var(--theme-assistant-avatar-border-width);
+      border-color: var(--theme-assistant-avatar-border-color);
+      box-shadow: var(--theme-assistant-avatar-shadow);
+      background-color: var(--theme-assistant-avatar-fallback-background);
+  }
+  .theme-assistant-avatar-icon {
+      color: var(--theme-assistant-avatar-icon-color);
+  }
+  .theme-assistant-avatar-icon > svg {
+      height: var(--theme-assistant-avatar-icon-size);
+      width: var(--theme-assistant-avatar-icon-size);
+  }
+  .theme-assistant-loading-text {
+      color: var(--theme-assistant-loading-text-color);
+      font-size: var(--theme-assistant-loading-font-size);
+      font-style: var(--theme-assistant-loading-font-style);
+  }
+  
+  /* Sidebar Theming */
+  .theme-sidebar-panel {
+    @apply hidden md:flex md:flex-col border-r transition-all duration-300 ease-in-out overflow-hidden shrink-0;
+    width: var(--theme-sidebar-panel-width);
+    background-color: var(--theme-sidebar-panel-background);
+    color: var(--theme-sidebar-panel-text-color);
+    border-color: var(--theme-sidebar-panel-border-color);
+  }
+  .theme-sidebar-header {
+      @apply flex items-center justify-between border-b shrink-0;
+      height: var(--theme-sidebar-header-height);
+      padding: var(--theme-sidebar-header-padding);
+      border-color: var(--theme-sidebar-header-border-color);
+  }
+  .theme-sidebar-header-title {
+      @apply flex items-center gap-2;
+      font-size: var(--theme-sidebar-header-title-font-size);
+      font-weight: var(--theme-sidebar-header-title-font-weight);
+      color: var(--theme-sidebar-panel-text-color);
+  }
+  .theme-sidebar-header-title > svg {
+      color: var(--theme-sidebar-header-icon-color);
+      height: var(--theme-sidebar-header-icon-size);
+      width: var(--theme-sidebar-header-icon-size);
+  }
+  .theme-sidebar-header-close-button {
+      @apply md:hidden;
+      color: var(--theme-sidebar-header-close-icon-color);
+  }
+  .theme-sidebar-header-close-button:hover {
+      color: var(--theme-sidebar-header-close-icon-color-hover);
+  }
+  .theme-sidebar-new-chat-button-container {
+      padding: var(--theme-sidebar-new-chat-button-container-padding);
+  }
+  .theme-sidebar-new-chat-button {
+      @apply w-full justify-start gap-2 border;
+      background-color: var(--theme-sidebar-new-chat-button-background-color);
+      color: var(--theme-sidebar-new-chat-button-text-color);
+      border-color: var(--theme-sidebar-new-chat-button-border-color);
+      font-size: var(--theme-sidebar-new-chat-button-font-size);
+  }
+  .theme-sidebar-new-chat-button:hover {
+      background-color: var(--theme-sidebar-new-chat-button-background-color-hover);
+      color: var(--theme-sidebar-new-chat-button-text-color-hover);
+      border-color: var(--theme-sidebar-new-chat-button-border-color-hover);
+  }
+  .theme-sidebar-new-chat-button .button-icon {
+      color: var(--theme-sidebar-new-chat-button-icon-color);
+  }
+  .theme-sidebar-new-chat-button:hover .button-icon {
+      color: var(--theme-sidebar-new-chat-button-icon-color-hover);
+  }
+  .theme-sidebar-content-container {
+      @apply flex-grow px-3;
+  }
+  .theme-sidebar-footer {
+      @apply p-3 mt-auto border-t shrink-0;
+      border-color: var(--theme-sidebar-footer-border-color);
+  }
+  .theme-sidebar-clear-button {
+      @apply w-full justify-start gap-2;
+      background-color: var(--theme-sidebar-clear-button-background-color);
+      color: var(--theme-sidebar-clear-button-text-color);
+      font-size: var(--theme-sidebar-clear-button-font-size);
+  }
+  .theme-sidebar-clear-button:hover {
+      background-color: var(--theme-sidebar-clear-button-background-color-hover);
+      color: var(--theme-sidebar-clear-button-text-color-hover);
+  }
+  .theme-sidebar-clear-button .button-icon {
+      color: var(--theme-sidebar-clear-button-icon-color);
+  }
+  .theme-sidebar-clear-button:hover .button-icon {
+      color: var(--theme-sidebar-clear-button-icon-color-hover);
+  }
+
+  /* Sidebar Item Theming */
+  .theme-sidebar-item {
+    @apply group flex items-center justify-between cursor-pointer transition-colors;
+    padding: var(--theme-sidebar-item-padding);
+    border-radius: var(--theme-sidebar-item-border-radius);
+    font-size: var(--theme-sidebar-item-font-size);
+  }
+  .theme-sidebar-item:not(.active) {
+    color: var(--theme-sidebar-panel-text-color);
+  }
+  .theme-sidebar-item:not(.active):hover {
+      background-color: var(--theme-sidebar-item-background-hover);
+      color: var(--theme-sidebar-item-text-color-hover);
+  }
+  .theme-sidebar-item.active {
+      background-color: var(--theme-sidebar-item-background-active);
+      color: var(--theme-sidebar-item-text-color-active);
+      font-weight: var(--theme-sidebar-item-font-weight-active);
+  }
+  .theme-sidebar-item-text {
+      @apply flex items-center gap-2.5 truncate;
+  }
+  .theme-sidebar-item-text > svg {
+      @apply shrink-0;
+      color: var(--theme-sidebar-item-icon-color);
+  }
+  .theme-sidebar-item:hover .theme-sidebar-item-text > svg {
+      color: var(--theme-sidebar-item-icon-color-hover);
+  }
+  .theme-sidebar-item.active .theme-sidebar-item-text > svg {
+      color: var(--theme-sidebar-item-icon-color-active);
+  }
+  .theme-sidebar-item-delete-button {
+    @apply h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100;
+    color: var(--theme-sidebar-item-delete-button-color);
+  }
+  .theme-sidebar-item.active .theme-sidebar-item-delete-button {
+      opacity: 0.8;
+  }
+  .theme-sidebar-item-delete-button:hover {
+      color: var(--theme-sidebar-item-delete-button-color-hover);
+  }
+}

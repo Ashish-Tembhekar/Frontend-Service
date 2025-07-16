@@ -1,0 +1,4 @@
+Follow the scripts
+npm i
+
+npm run dev 
