@@ -1,6 +1,6 @@
 "use client";
 
-import type { AskQuestionResponse, UploadPdfResponse, TranscribeResponse } from '../types/chat';
+import type { AskQuestionResponse, UploadPdfResponse, TranscribeResponse, ListFilesResponse, DeleteChunksResponse } from '../types/chat';
 import { appConfig } from '../lib/config';
 
 /**
@@ -28,6 +28,78 @@ export async function uploadPdfDocument(file: File): Promise<UploadPdfResponse> 
   } catch (error) {
     console.error("Error calling upload-pdf endpoint:", error);
     if (error instanceof Error && error.message.startsWith('PDF upload failed')) {
+        throw error;
+    }
+    throw new Error("Failed to connect to the document service. Please check the backend connection or try again.");
+  }
+}
+
+/**
+ * Lists all files in the backend database.
+ */
+export async function listFiles(): Promise<ListFilesResponse> {
+  try {
+    console.log('apiClientNew - listFiles called');
+    
+    const response = await fetch(`${appConfig.fastApiBaseUrl}/files/`, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    console.log('apiClientNew - List files response status:', response.status);
+    console.log('apiClientNew - List files response ok:', response.ok);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Error from FastAPI backend during list files:", response.status, errorBody);
+      throw new Error(`List files request failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: ListFilesResponse = await response.json();
+    console.log('apiClientNew - List files response data:', result);
+    return result;
+
+  } catch (error) {
+    console.error("Error calling files endpoint:", error);
+    if (error instanceof Error && error.message.startsWith('List files request failed')) {
+        throw error;
+    }
+    throw new Error("Failed to connect to the document service. Please check the backend connection or try again.");
+  }
+}
+
+/**
+ * Deletes all chunks associated with a specific source file using UUID.
+ */
+export async function deleteFileChunks(uuid: string): Promise<DeleteChunksResponse> {
+  try {
+    console.log('apiClientNew - deleteFileChunks called with uuid:', uuid);
+    
+    const response = await fetch(`${appConfig.fastApiBaseUrl}/files/${uuid}`, {
+      method: 'DELETE',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    console.log('apiClientNew - Delete chunks response status:', response.status);
+    console.log('apiClientNew - Delete chunks response ok:', response.ok);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Error from FastAPI backend during delete chunks:", response.status, errorBody);
+      throw new Error(`Delete chunks request failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result: DeleteChunksResponse = await response.json();
+    console.log('apiClientNew - Delete chunks response data:', result);
+    return result;
+
+  } catch (error) {
+    console.error("Error calling delete-chunks endpoint:", error);
+    if (error instanceof Error && error.message.startsWith('Delete chunks request failed')) {
         throw error;
     }
     throw new Error("Failed to connect to the document service. Please check the backend connection or try again.");

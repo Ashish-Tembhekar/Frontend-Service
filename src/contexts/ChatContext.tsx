@@ -7,6 +7,7 @@ import type { Message, ChatThread, AudioData } from '../types/chat';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion } from '../services/apiClientNew';
 import { useToast } from '../hooks/use-toast';
+import { validateFileSize } from '../lib/utils';
 
 interface ChatContextType {
   chatThreads: ChatThread[];
@@ -24,6 +25,7 @@ interface ChatContextType {
   toggleHistoryPanel: () => void;
   setIsHistoryPanelOpen: (isOpen: boolean) => void;
   getThreadTitle: (threadId: string) => string;
+  stopCurrentAudio: () => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -45,7 +47,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [activeChatThread, setActiveChatThread] = useState<ChatThread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingResponse, setIsLoadingResponse] = useState(false);
-  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', true);
+  const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
+  const [currentAudioElement, setCurrentAudioElement] = useState<HTMLAudioElement | null>(null);
   const { toast } = useToast();
 
   // Helper to add or update a message in the current thread for local storage
@@ -113,6 +116,18 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const uploadFile = async (file: File) => {
     if (!currentChatThreadId) return;
 
+    // Validate file size before proceeding
+    const validation = validateFileSize(file);
+    if (!validation.isValid) {
+      console.log('File validation failed in ChatContext:', validation.errorMessage);
+      toast({
+        title: "File too large",
+        description: validation.errorMessage,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const systemMessageId = `msg_system_${Date.now()}`;
     const systemMessage: Message = {
       id: systemMessageId,
@@ -161,11 +176,23 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     
     try {
       const audio = new Audio(`data:${audioData.mime_type};base64,${audioData.audio_base64}`);
+      setCurrentAudioElement(audio);
       audio.play().catch(error => {
         console.error('Error playing audio:', error);
+        setCurrentAudioElement(null);
       });
     } catch (error) {
       console.error('Error creating audio element:', error);
+      setCurrentAudioElement(null);
+    }
+  };
+
+  // Function to stop current audio
+  const stopCurrentAudio = () => {
+    if (currentAudioElement) {
+      currentAudioElement.pause();
+      currentAudioElement.currentTime = 0;
+      setCurrentAudioElement(null);
     }
   };
 
@@ -229,7 +256,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       console.log('ChatContext - Conversation history string:', conversationHistoryString);
       
       // Pass conversation history as string and detected language
-      const response = await askQuestion(userInput, conversationHistoryString, isVoiceMessage ? detectedLang : undefined);
+      // For voice messages: use detectedLang if provided, otherwise undefined
+      // For text messages: use detectedLang if provided (user selected language), otherwise undefined
+      const response = await askQuestion(userInput, conversationHistoryString, detectedLang);
       console.log('ChatContext - askQuestion response:', response);
       
       if (!response) {
@@ -348,7 +377,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return thread ? thread.title : "Chat";
   };
 
-  const toggleHistoryPanel = () => setIsHistoryPanelOpen(prev => !prev);
+  const toggleHistoryPanel = () => {
+    setIsHistoryPanelOpen(prev => !prev);
+  };
 
   return (
     <ChatContext.Provider value={{
@@ -367,6 +398,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       toggleHistoryPanel,
       setIsHistoryPanelOpen,
       getThreadTitle,
+      stopCurrentAudio,
     }}>
       {children}
     </ChatContext.Provider>

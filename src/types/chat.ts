@@ -26,12 +26,38 @@ export interface ChatThread {
 // --- Backend Specific Types ---
 
 /**
- * Represents the successful response from the POST /upload-pdf/ endpoint.
+ * Represents the successful response from the POST /upload-document/ endpoint.
  */
 export interface UploadPdfResponse {
   status: string;
+  filename: string;
+  uuid: string;
   chunks: number;
-  document_types: Record<string, number>;
+  total_documents_in_store: number;
+}
+
+/**
+ * Represents the response from the GET /files/ endpoint.
+ */
+export interface ListFilesResponse {
+  total_files: number;
+  files: Array<{
+    uuid: string;
+    file_name: string;
+    hash: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+}
+
+/**
+ * Represents the response from the GET /chunks/{source_name} endpoint.
+ */
+export interface DeleteChunksResponse {
+  success: boolean;
+  message: string;
+  deleted_chunks?: number;
 }
 
 /**

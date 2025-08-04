@@ -424,14 +424,6 @@ export function VoiceChatModal({ isOpen, onClose }: VoiceChatModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Voice Chat</h2>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-5 w-5" />
-          </Button>
         </div>
 
         {/* Main Content */}

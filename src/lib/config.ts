@@ -7,5 +7,7 @@ export const appConfig = {
   appName: "Nexus Chat",
   // Base URL for the FastAPI backend
   fastApiBaseUrl: process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000",
-  maxFileSizeMB: 50, // Maximum file size for uploads in MB, increased for larger PDFs
+  // File size limits in MB
+  maxFileSizeMB: parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB || "50"), // Maximum file size for general uploads in MB
+  maxPdfSizeMB: parseInt(process.env.NEXT_PUBLIC_MAX_PDF_SIZE_MB || "2"), // Maximum PDF file size in MB (default 2MB)
 };
