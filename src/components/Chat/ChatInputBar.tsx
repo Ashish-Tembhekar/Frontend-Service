@@ -402,10 +402,14 @@ export function ChatInputBar() {
               onClick={handleMicClick}
               disabled={isMicDisabled && !isAudioPlaying}
               size="icon" 
-              className={cn("chat-input-bar-mic-button-theme", { 
-                'listening': isRecording,
-                'bg-red-500 hover:bg-red-600 text-white': isAudioPlaying 
-              })}
+              className={cn(
+                "h-10 w-10 rounded-full transition-all duration-200 btn-modern",
+                isRecording
+                  ? "bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 animate-pulse"
+                  : isAudioPlaying
+                    ? "bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40"
+                    : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              )}
               aria-label={isAudioPlaying ? "Stop speaking" : (isRecording ? "Stop recording" : "Start recording")}
             >
               {isAudioPlaying ? <Square className="h-4 w-4" /> : (isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />)}
@@ -415,7 +419,7 @@ export function ChatInputBar() {
               onClick={() => setIsVoiceChatOpen(true)}
               disabled={isLoadingResponse || isRecording || isTranscribing}
               size="icon" 
-              className="chat-input-bar-mic-button-theme"
+              className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-all duration-200 btn-modern"
               aria-label="Start voice chat"
             >
               <Phone className="h-4 w-4" />
@@ -425,7 +429,7 @@ export function ChatInputBar() {
               onClick={handleSubmit} 
               disabled={isLoadingResponse || !inputValue.trim() || isRecording || isTranscribing} 
               size="icon" 
-              className="chat-input-bar-send-button-theme"
+              className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed btn-modern"
               aria-label="Send message"
             >
               <Send className="h-4 w-4" />

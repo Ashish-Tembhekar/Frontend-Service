@@ -89,29 +89,20 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
           <div className="p-4 mt-auto border-t-2 border-slate-200/60 dark:border-slate-700/60 shrink-0">
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="ghost" className="w-full justify-start gap-3 h-12 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 transition-all duration-200">
-                      <Trash className="h-5 w-5" />
-                      <span className="font-medium">Clear History</span>
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Delete all chat history</p>
-                  </TooltipContent>
-                </Tooltip>
+                <Button variant="ghost" className="w-full justify-start gap-3 h-12 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300 transition-all duration-200">
+                  <Trash className="h-5 w-5" />
+                  <span className="font-medium">Clear History</span>
+                </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent className="bg-white dark:bg-slate-900 border border-white/20 dark:border-slate-700/20">
+              <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle className="text-slate-900 dark:text-slate-100">Clear Chat History?</AlertDialogTitle>
-                  <AlertDialogDescription className="text-slate-600 dark:text-slate-400">
+                  <AlertDialogTitle>Clear Chat History?</AlertDialogTitle>
+                  <AlertDialogDescription>
                     This action cannot be undone. This will permanently delete all your chat threads.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
-                    Cancel
-                  </AlertDialogCancel>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={clearChatHistory}
                     className="bg-red-600 hover:bg-red-700 text-white"

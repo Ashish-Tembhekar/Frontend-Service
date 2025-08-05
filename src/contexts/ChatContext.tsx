@@ -351,7 +351,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteChatThread = (threadId: string) => {
-    const remainingThreads = chatThreads.filter(t => t.id !== threadId);
+    const remainingThreads = chatThreads.filter(t => t.id !== threadId);    
     setChatThreads(remainingThreads);
 
     if (currentChatThreadId === threadId) {
