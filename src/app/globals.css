@@ -713,6 +713,52 @@ body {
     }
   }
 
+  /* Full Screen Voice Chat Animations */
+  .voice-chat-fullscreen {
+    animation: voice-chat-fade-in 0.3s ease-out;
+  }
+
+  @keyframes voice-chat-fade-in {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  .voice-chat-button-pulse {
+    animation: voice-chat-button-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes voice-chat-button-pulse {
+    0%, 100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+    }
+    50% {
+      transform: scale(1.05);
+      box-shadow: 0 0 0 10px rgba(59, 130, 246, 0);
+    }
+  }
+
+  .voice-chat-recording-pulse {
+    animation: voice-chat-recording-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes voice-chat-recording-pulse {
+    0%, 100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    50% {
+      transform: scale(1.1);
+      box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+    }
+  }
+
   /* Message Theming */
   .theme-user-bubble {
       @apply max-w-[75%] flex flex-col;
@@ -887,4 +933,40 @@ body {
   .theme-sidebar-item-delete-button:hover {
       color: var(--theme-sidebar-item-delete-button-color-hover);
   }
+}
+
+/* Dashboard File List Scrolling */
+.dashboard-file-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  position: relative;
+}
+
+.dashboard-file-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-file-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-file-list::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 4px;
+}
+
+.dashboard-file-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Ensure proper scrolling behavior */
+.dashboard-file-list > * {
+  overflow: visible;
+}
+
+/* Force scrollbar to be visible when content overflows */
+.dashboard-file-list:has(> *:nth-child(10)) {
+  overflow-y: scroll !important;
 }

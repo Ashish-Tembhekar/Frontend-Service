@@ -10,14 +10,21 @@ import { useToast } from '../../hooks/use-toast';
 import { appConfig } from '../../lib/config';
 
 interface Chunk {
-  chunk_id: string;
+  chunk_id: string | number;  // Backend returns number, convert to string
   content: string;
   metadata: {
     document_uuid: string;
     page_number?: number;
+    page_num?: number;        // Backend uses page_num from hybrid_chunking
     chunk_index?: number;
+    heading?: string;         // Backend includes heading
+    has_image?: boolean;      // Backend includes image info
+    has_table?: boolean;      // Backend includes table info
+    source?: string;          // Backend includes source
+    type?: string;            // Backend includes type
     [key: string]: any;
   };
+  type?: string;              // Backend includes type at root level
 }
 
 interface FileChunksResponse {
@@ -141,7 +148,7 @@ export function ChunksModal({ isOpen, onClose, fileUuid, fileName }: ChunksModal
                 ) : (
                   <div className="space-y-4 pb-6">
                     {chunks.map((chunk, index) => (
-                      <Card key={chunk.chunk_id} className="overflow-hidden">
+                      <Card key={String(chunk.chunk_id)} className="overflow-hidden">
                         <CardHeader className="pb-3">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -155,10 +162,10 @@ export function ChunksModal({ isOpen, onClose, fileUuid, fileName }: ChunksModal
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => copyToClipboard(chunk.content, chunk.chunk_id)}
+                              onClick={() => copyToClipboard(chunk.content, String(chunk.chunk_id))}
                               className="h-8 w-8 p-0"
                             >
-                              {copiedChunkId === chunk.chunk_id ? (
+                              {copiedChunkId === String(chunk.chunk_id) ? (
                                 <CheckCircle className="h-4 w-4 text-green-600" />
                               ) : (
                                 <Copy className="h-4 w-4" />
@@ -168,9 +175,24 @@ export function ChunksModal({ isOpen, onClose, fileUuid, fileName }: ChunksModal
                           
                           {/* Metadata */}
                           <div className="flex flex-wrap gap-2 mt-2">
-                            {chunk.metadata.page_number && (
+                            {(chunk.metadata.page_number || chunk.metadata.page_num) && (
                               <Badge variant="outline">
-                                Page {chunk.metadata.page_number}
+                                Page {chunk.metadata.page_number || chunk.metadata.page_num}
+                              </Badge>
+                            )}
+                            {chunk.metadata.heading && (
+                              <Badge variant="outline">
+                                {chunk.metadata.heading}
+                              </Badge>
+                            )}
+                            {chunk.metadata.has_image && (
+                              <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                                📷 Has Image
+                              </Badge>
+                            )}
+                            {chunk.metadata.has_table && (
+                              <Badge variant="outline" className="bg-green-100 text-green-800">
+                                📊 Has Table
                               </Badge>
                             )}
                             {chunk.metadata.chunk_index !== undefined && (
@@ -179,7 +201,8 @@ export function ChunksModal({ isOpen, onClose, fileUuid, fileName }: ChunksModal
                               </Badge>
                             )}
                             {Object.entries(chunk.metadata)
-                              .filter(([key]) => !['document_uuid', 'page_number', 'chunk_index'].includes(key))
+                              .filter(([key]) => !['document_uuid', 'page_number', 'page_num', 'chunk_index', 'heading', 'has_image', 'has_table', 'type'].includes(key))
+                              .filter(([key, value]) => value !== null && value !== undefined && value !== '' && value !== false)
                               .map(([key, value]) => (
                                 <Badge key={key} variant="outline" className="text-xs">
                                   {key}: {String(value)}

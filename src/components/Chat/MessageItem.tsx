@@ -1,5 +1,7 @@
 // src/components/Chat/MessageItem.tsx
 import type { Message } from '../../types/chat';
+import { appConfig } from '../../lib/config';
+import React, { useMemo, useState } from 'react';
 import { Bot, Loader2, User } from 'lucide-react'; 
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
@@ -48,7 +50,7 @@ export function MessageItem({ message }: MessageItemProps) {
             </TooltipContent>
           </Tooltip>
           <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Nexus AI</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">AI Assistant</span>
             <span className="text-sm text-slate-500 dark:text-slate-400 italic">Thinking...</span>
           </div>
         </div>
@@ -67,14 +69,14 @@ export function MessageItem({ message }: MessageItemProps) {
               </div>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Nexus AI Assistant</p>
+              <p>AI Assistant</p>
             </TooltipContent>
           </Tooltip>
         )}
         <div className={`flex flex-col max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
           {!isUser && (
             <span className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 ml-1">
-              Nexus AI
+              AI Assistant
             </span>
           )}
           <div
@@ -113,6 +115,59 @@ export function MessageItem({ message }: MessageItemProps) {
                 </TooltipContent>
               </Tooltip>
             )}
+
+            {/* Developer mode: collapsible debug details */}
+            {!isUser && appConfig.developerMode && (() => {
+              const debugGraph = (message as any).debug_graph_context as string | undefined;
+              const debugDocs = (message as any).debug_filtered_docs as Array<{ content_preview: string; metadata: Record<string, any> }> | undefined;
+              const hasAnyDebug = Boolean(debugGraph) || Array.isArray(debugDocs);
+              if (!hasAnyDebug) return null;
+              // Local component state for expand/collapse
+              const [devOpen, setDevOpen] = useState(false);
+              const graphCount = useMemo(() => (debugGraph ? debugGraph.split('\n').filter(Boolean).length : 0), [debugGraph]);
+              const docsCount = useMemo(() => (Array.isArray(debugDocs) ? debugDocs.length : 0), [debugDocs]);
+              return (
+                <div className="mt-4 border-t pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setDevOpen(v => !v)}
+                    className="text-xs inline-flex items-center gap-2 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    <span className="font-medium">Developer details</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">graph {graphCount}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">docs {docsCount}</span>
+                    <span className="ml-1 text-[10px] opacity-70">{devOpen ? 'Hide' : 'Show'}</span>
+                  </button>
+
+                  {devOpen && (
+                    <div className="mt-3 space-y-3">
+                      {debugGraph && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-500 mb-1">Graph context</div>
+                          <pre className="text-xs whitespace-pre-wrap bg-slate-50 dark:bg-slate-900 p-2 rounded-md border border-slate-200 dark:border-slate-700 max-h-48 overflow-auto">
+                            {debugGraph}
+                          </pre>
+                        </div>
+                      )}
+                      {Array.isArray(debugDocs) && (
+                        <div>
+                          <div className="text-xs font-semibold text-slate-500 mb-1">Top documents after reranking</div>
+                          <div className="space-y-2 max-h-60 overflow-auto">
+                            {debugDocs.map((d, idx) => (
+                              <div key={idx} className="text-xs p-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+                                <div className="font-medium">#{idx + 1} {d.metadata?.source || 'unknown source'} {d.metadata?.page != null ? `(p${d.metadata.page})` : ''}</div>
+                                <div className="text-[11px] text-slate-600 dark:text-slate-400">{d.metadata?.heading || ''}</div>
+                                <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{d.content_preview}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
           
           <div className={`text-xs text-slate-500 dark:text-slate-400 mt-2 ${

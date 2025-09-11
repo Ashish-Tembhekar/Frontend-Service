@@ -80,6 +80,12 @@ export interface AskQuestionResponse {
   answer: string; // This is an HTML string
   sources: Source[];
   audio: AudioData | null;
+  // Developer mode fields (optional)
+  debug_graph_context?: string;
+  debug_filtered_docs?: Array<{
+    content_preview: string;
+    metadata: Record<string, any>;
+  }>;
 }
 
 /**

@@ -113,12 +113,14 @@ export async function deleteFileChunks(uuid: string): Promise<DeleteChunksRespon
 export async function askQuestionAPI(
   query: string, 
   conversationHistory?: string, 
-  detectedLang?: string
+  detectedLang?: string,
+  needsAudio: boolean = false
 ): Promise<AskQuestionResponse> {
   try {
     console.log('apiClientNew - askQuestionAPI called with query:', query);
     console.log('apiClientNew - askQuestionAPI called with conversationHistory:', conversationHistory);
     console.log('apiClientNew - askQuestionAPI called with detectedLang:', detectedLang);
+    console.log('apiClientNew - askQuestionAPI called with needsAudio:', needsAudio);
     
     const url = new URL(`${appConfig.fastApiBaseUrl}/ask/`);
     url.searchParams.append('q', query);
@@ -130,6 +132,11 @@ export async function askQuestionAPI(
     // Add conversation history as a string parameter
     if (conversationHistory && conversationHistory.trim() !== '') {
       url.searchParams.append('conversation_history', conversationHistory);
+    }
+    
+    // Add audio flag parameter
+    if (needsAudio) {
+      url.searchParams.append('needs_audio', 'true');
     }
     
     console.log('apiClientNew - Request URL:', url.toString());

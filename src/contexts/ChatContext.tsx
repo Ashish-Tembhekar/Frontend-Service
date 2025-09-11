@@ -258,7 +258,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // Pass conversation history as string and detected language
       // For voice messages: use detectedLang if provided, otherwise undefined
       // For text messages: use detectedLang if provided (user selected language), otherwise undefined
-      const response = await askQuestion(userInput, conversationHistoryString, detectedLang);
+      // Only generate audio for voice interactions (microphone or direct call)
+      const needsAudio = isVoiceMessage;
+      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, needsAudio);
       console.log('ChatContext - askQuestion response:', response);
       
       if (!response) {
@@ -276,6 +278,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading: false,
         timestamp: new Date().toISOString(),
         audioData: response.audio,
+        // Attach developer debug fields for UI if provided (independently)
+        ...(response.debug_graph_context !== undefined
+          ? { debug_graph_context: response.debug_graph_context } as any
+          : {}),
+        ...(response.debug_filtered_docs !== undefined
+          ? { debug_filtered_docs: response.debug_filtered_docs } as any
+          : {}),
       };
       
       setMessages(prev => {
@@ -284,7 +293,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return finalMessages;
       });
 
-      // Auto-play audio only for voice messages
+      // Auto-play audio only for voice messages and when audio is available
       if (isVoiceMessage && response.audio) {
         playAudioResponse(response.audio);
       }

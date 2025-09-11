@@ -11,7 +11,7 @@ import { appConfig } from '../../lib/config';
 import { cn, validateFileSize } from '../../lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '../ui/alert';
 import { transcribeAudioAPI as transcribeAudio } from '../../services/apiClientNew';
-import { VoiceChatModal } from './VoiceChatModal';
+import { VoiceChatFullScreen } from './VoiceChatFullScreen';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
@@ -355,7 +355,7 @@ export function ChatInputBar() {
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
-                placeholder={isRecording ? "Recording..." : (isTranscribing ? "Transcribing..." : "Ask Nexus Chat anything...")}
+                placeholder={isRecording ? "Recording..." : (isTranscribing ? "Transcribing..." : "Ask AI Assistant anything...")}
                 className="chat-input-bar-textarea-theme bg-transparent border-none focus:ring-0 resize-none text-slate-700 dark:text-slate-300 placeholder:text-slate-500 dark:placeholder:text-slate-400"
                 rows={1}
                 disabled={isLoadingResponse || isRecording || isTranscribing}
@@ -444,8 +444,7 @@ export function ChatInputBar() {
           className="hidden"
           accept=".pdf" 
         />
-
-        <VoiceChatModal 
+        <VoiceChatFullScreen 
           isOpen={isVoiceChatOpen} 
           onClose={() => setIsVoiceChatOpen(false)} 
         />

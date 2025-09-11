@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 
 interface WebSocketMessage {
-  type: 'status_update' | 'processing_event' | 'file_deleted';
-  file_uuid: string;
+  type: 'status_update' | 'processing_event' | 'file_deleted' | 'job_status_update' | 'pdf_processing_complete' | 'pdf_processing_failed';
+  file_uuid?: string;
+  document_uuid?: string;
   file_name: string;
   status?: string;
   progress_percentage?: number;
+  progress_percent?: number;
   chunks_created?: number;
   event_type?: string;
   event_message?: string;
+  message?: string;
+  job_id?: string;
   timestamp: string;
 }
 

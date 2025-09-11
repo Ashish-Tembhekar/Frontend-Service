@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
-import { ScrollArea } from '../ui/scroll-area';
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { 
   FileText, 
@@ -272,8 +272,12 @@ export function DashboardView() {
     if (lastMessage) {
       console.log('📨 Processing WebSocket message in DashboardView:', lastMessage);
       
-      // Update files list when we receive status updates or file deletions
-      if (lastMessage.type === 'status_update' || lastMessage.type === 'file_deleted') {
+      // Update files list when we receive status updates, job updates, or file deletions
+      if (lastMessage.type === 'status_update' || 
+          lastMessage.type === 'file_deleted' || 
+          lastMessage.type === 'job_status_update' ||
+          lastMessage.type === 'pdf_processing_complete' ||
+          lastMessage.type === 'pdf_processing_failed') {
         console.log('🔄 Refreshing data due to:', lastMessage.type);
         refreshData();
       }
@@ -289,8 +293,8 @@ export function DashboardView() {
     );
   }
 
-  return (
-    <div className="container mx-auto p-6 space-y-6">
+     return (
+     <div className="container mx-auto p-6 space-y-6 pb-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -414,14 +418,14 @@ export function DashboardView() {
           <TabsTrigger value="recent">Recent Events</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="files" className="space-y-4">
-          <Card className="flex flex-col h-[600px]">
-            <CardHeader className="flex-shrink-0">
-              <CardTitle>File List</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 min-h-0 p-6">
-              <ScrollArea className="h-full">
-                <div className="space-y-4 pr-4">
+                                   <TabsContent value="files" className="space-y-4">
+            <Card className="flex flex-col mb-8">
+             <CardHeader className="flex-shrink-0 pb-2">
+               <CardTitle className="text-lg">File List</CardTitle>
+             </CardHeader>
+             <CardContent className="flex-1 min-h-0 p-0">
+                               <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                <div className="space-y-4 p-6 pr-8">
                   {files.length === 0 ? (
                     <div className="text-center py-8 text-muted-foreground">
                       <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -446,7 +450,7 @@ export function DashboardView() {
                           </div>
                         </div>
                       )}
-                      {files.map((file) => (
+                                             {files.map((file) => (
                       <div
                         key={file.uuid}
                         className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
@@ -536,7 +540,7 @@ export function DashboardView() {
                     </>
                   )}
                 </div>
-              </ScrollArea>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -591,30 +595,32 @@ export function DashboardView() {
           )}
         </TabsContent>
 
-        <TabsContent value="recent" className="space-y-4">
-          {dashboardStats?.recent_events && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Recent Events</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {dashboardStats.recent_events.map((event, index) => (
-                    <div key={index} className="flex items-center space-x-3 p-2 rounded border">
-                      <div className="flex-1">
-                        <div className="font-medium">{event.file_name}</div>
-                        <div className="text-sm text-muted-foreground">{event.event_message}</div>
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(event.event_timestamp).toLocaleString()}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
+                                                                                                                                               <TabsContent value="recent" className="space-y-4">
+              {dashboardStats?.recent_events && (
+                <Card className="flex flex-col mb-8">
+                <CardHeader className="flex-shrink-0 pb-2">
+                  <CardTitle className="text-lg">Recent Events</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 min-h-0 p-0">
+                  <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                   <div className="space-y-2 p-6 pr-8">
+                     {dashboardStats.recent_events.map((event, index) => (
+                       <div key={index} className="flex items-center space-x-3 p-2 rounded border">
+                         <div className="flex-1">
+                           <div className="font-medium">{event.file_name}</div>
+                           <div className="text-sm text-muted-foreground">{event.event_message}</div>
+                         </div>
+                         <div className="text-xs text-muted-foreground">
+                           {new Date(event.event_timestamp).toLocaleString()}
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               </CardContent>
+             </Card>
+           )}
+         </TabsContent>
       </Tabs>
 
       {/* File Details Modal */}
