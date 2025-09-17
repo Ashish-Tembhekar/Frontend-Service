@@ -22,6 +22,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   overflow-x: hidden;
+  background: #ffffff;
+  color: #262626;
 }
 
 /* Ensure proper viewport behavior on mobile */
@@ -124,6 +126,29 @@ body {
   }
 }
 
+@keyframes enterprise-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(34, 197, 94, 0.2);
+  }
+}
+
+@keyframes matrix-scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
 /* Apply animations to components with fallbacks */
 .message-item {
   animation: fadeIn 0.3s ease-out;
@@ -163,15 +188,33 @@ body {
   }
 }
 
-/* Enhanced button hover effects */
+/* Enhanced button hover effects - Enterprise Style */
 .btn-modern {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: transform;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, box-shadow;
 }
 
 .btn-modern:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(34, 197, 94, 0.15);
+}
+
+/* Enterprise glow effects */
+.enterprise-glow {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.1);
+  transition: box-shadow 0.3s ease;
+}
+
+.enterprise-glow:hover {
+  box-shadow: 0 0 30px rgba(34, 197, 94, 0.2);
+}
+
+/* Modern glass effect for enterprise */
+.glass-enterprise {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(34, 197, 94, 0.1);
 }
 
 /* Modern card styling with fallbacks */
@@ -308,38 +351,38 @@ body {
 }
 
 @layer base {
-  /* Light Mode */
+  /* Light Mode - Clean White with Black & Grey Accents */
   :root {
-    --background: 0 0% 100%; /* White */
-    --foreground: 220 25% 15%; /* Dark Gray */
+    --background: 0 0% 100%; /* Clean white background */
+    --foreground: 0 0% 15%; /* Dark text */
 
-    --card: 220 13% 96%; /* Very light gray, almost white */
-    --card-foreground: 220 25% 10%; /* Dark gray for text on cards */
+    --card: 0 0% 100%; /* White cards */
+    --card-foreground: 0 0% 15%; /* Dark text on cards */
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 25% 10%;
+    --popover-foreground: 0 0% 15%;
 
-    --primary: 260 65% 60%; /* Vibrant modern Indigo/Purple */
+    --primary: 0 0% 20%; /* Professional dark grey */
     --primary-foreground: 0 0% 100%; /* White text on primary */
 
-    --secondary: 220 10% 90%; /* Lighter gray */
-    --secondary-foreground: 220 20% 30%; /* Darker gray for text on secondary */
+    --secondary: 0 0% 96%; /* Very light gray secondary */
+    --secondary-foreground: 0 0% 20%; /* Dark text on secondary */
 
-    --muted: 220 10% 92%;
-    --muted-foreground: 220 15% 55%; /* Softer muted text */
+    --muted: 0 0% 96%; /* Light gray muted */
+    --muted-foreground: 0 0% 45%; /* Medium gray muted text */
 
-    /* Accent: Used for hover backgrounds (e.g., outline/ghost buttons) - needs to be light/faded */
-    --accent: 260 70% 97%; /* Very light, slightly desaturated primary, even lighter */
-    --accent-foreground: 260 60% 50%; /* Darker, muted primary for text on light accent */
+    /* Accent: Used for hover backgrounds */
+    --accent: 0 0% 95%; /* Very light grey for hovers */
+    --accent-foreground: 0 0% 25%; /* Dark grey text on light accent */
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 88%; /* Softer border */
-    --input: 220 13% 91%;
-    --ring: 260 65% 65%; /* Primary color for focus rings */
+    --border: 0 0% 90%; /* Light gray borders */
+    --input: 0 0% 98%; /* Very light input backgrounds */
+    --ring: 0 0% 20%; /* Dark grey focus rings */
 
-    --radius: 0.75rem; /* Slightly more rounded */
+    --radius: 0.75rem; /* Modern rounded corners */
 
     /* Chart colors (can be adjusted if charts are used) */
     --chart-1: 220 70% 50%;
@@ -348,16 +391,16 @@ body {
     --chart-4: 280 60% 55%;
     --chart-5: 340 70% 55%;
 
-    /* Sidebar specific colors - Light */
-    --sidebar-background: 220 15% 97%; /* Slightly off-white, distinct from main bg */
-    --sidebar-foreground: 220 20% 25%; /* Dark text for sidebar */
-    --sidebar-primary: 260 65% 60%; /* Consistent with main primary */
+    /* Sidebar specific colors - Clean White with Grey Accents */
+    --sidebar-background: 0 0% 98%; /* Very light gray sidebar background */
+    --sidebar-foreground: 0 0% 20%; /* Dark text for sidebar */
+    --sidebar-primary: 0 0% 20%; /* Professional dark grey */
     --sidebar-primary-foreground: 0 0% 100%;
-    /* Sidebar Accent: Used for history item hover background - very subtle */
-    --sidebar-accent: 220 20% 98%; /* Extremely light gray, almost white, very subtle hover */
-    --sidebar-accent-foreground: 260 65% 58%; /* Primary color for text on sidebar hover - slightly lighter */
-    --sidebar-border: 220 13% 85%;
-    --sidebar-ring: 260 65% 65%;
+    /* Sidebar Accent: Used for history item hover background */
+    --sidebar-accent: 0 0% 95%; /* Very light grey hover */
+    --sidebar-accent-foreground: 0 0% 25%; /* Dark grey text on hover */
+    --sidebar-border: 0 0% 88%; /* Light gray border */
+    --sidebar-ring: 0 0% 20%;
 
     /* --- CHAT THEME TOKENS --- */
     /* Chat Header */
@@ -495,35 +538,35 @@ body {
     --theme-sidebar-item-delete-button-color-hover: hsl(var(--destructive));
   }
 
-  /* Dark Mode */
+  /* Dark Mode - Enhanced Enterprise Theme */
   .dark {
-    --background: 220 25% 6%;
-    --foreground: 210 40% 98%;
-    --card: 220 20% 12%;
-    --card-foreground: 210 35% 92%;
-    --popover: 220 25% 8%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 260 70% 65%;
+    --background: 0 0% 2%; /* Deeper black background */
+    --foreground: 120 8% 98%; /* Bright white text */
+    --card: 0 0% 5%; /* Very dark cards */
+    --card-foreground: 120 5% 95%; /* Light text on cards */
+    --popover: 0 0% 3%;
+    --popover-foreground: 120 8% 98%;
+    --primary: 142 84% 42%; /* Brighter green for dark mode */
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 15% 18%;
-    --secondary-foreground: 210 40% 80%;
-    --muted: 220 15% 20%;
-    --muted-foreground: 210 25% 70%;
-    --accent: 260 50% 16%;
-    --accent-foreground: 260 70% 80%;
-    --destructive: 0 70% 55%;
+    --secondary: 0 0% 8%; /* Dark secondary */
+    --secondary-foreground: 120 5% 85%; /* Light text on secondary */
+    --muted: 0 0% 7%; /* Dark muted */
+    --muted-foreground: 120 3% 65%; /* Muted text */
+    --accent: 142 40% 6%; /* Very dark green accent */
+    --accent-foreground: 142 84% 55%; /* Bright green text */
+    --destructive: 0 84% 65%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 15% 20%;
-    --input: 220 15% 15%;
-    --ring: 260 70% 70%;
-    --sidebar-background: 220 22% 8%;
-    --sidebar-foreground: 210 35% 90%;
-    --sidebar-primary: 260 70% 65%;
+    --border: 0 0% 12%; /* Dark borders */
+    --input: 0 0% 8%; /* Dark inputs */
+    --ring: 142 84% 42%; /* Bright green focus */
+    --sidebar-background: 0 0% 3%; /* Very dark sidebar */
+    --sidebar-foreground: 120 5% 90%; /* Light sidebar text */
+    --sidebar-primary: 142 84% 42%; /* Bright green */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 25% 12%;
-    --sidebar-accent-foreground: 260 70% 75%;
-    --sidebar-border: 220 15% 18%;
-    --sidebar-ring: 260 70% 70%;
+    --sidebar-accent: 142 50% 8%; /* Dark green accent */
+    --sidebar-accent-foreground: 142 84% 65%; /* Bright green text */
+    --sidebar-border: 0 0% 15%; /* Dark borders */
+    --sidebar-ring: 142 84% 42%;
 
     /* --- DARK CHAT THEME TOKENS --- */
     --theme-chat-header-background: hsl(var(--background));

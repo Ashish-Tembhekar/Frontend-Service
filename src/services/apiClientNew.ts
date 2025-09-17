@@ -214,4 +214,71 @@ export async function transcribeAudioAPI(audioBlob: Blob): Promise<TranscribeRes
         }
         throw new Error("Failed to connect to the transcription service. Please check the backend or try again.");
     }
+}
+
+/**
+ * Parallel processing: transcribe audio and process query in one optimized call.
+ * This combines transcription and query processing for faster voice interactions.
+ */
+export async function transcribeAndAskAPI(
+    audioBlob: Blob,
+    conversationHistory?: string,
+    selectedLanguage?: string,
+    needsAudio: boolean = true
+): Promise<AskQuestionResponse> {
+    console.log('apiClientNew - transcribeAndAskAPI called with blob size:', audioBlob.size);
+    console.log('apiClientNew - transcribeAndAskAPI conversationHistory:', conversationHistory);
+    console.log('apiClientNew - transcribeAndAskAPI selectedLanguage:', selectedLanguage);
+    console.log('apiClientNew - transcribeAndAskAPI needsAudio:', needsAudio);
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    
+    // Add conversation history if provided
+    if (conversationHistory && conversationHistory.trim() !== '') {
+        formData.append('conversation_history', conversationHistory);
+    }
+    
+    // Add selected language if provided
+    if (selectedLanguage && selectedLanguage !== 'auto') {
+        formData.append('selected_language', selectedLanguage);
+    }
+    
+    // Add audio flag
+    formData.append('needs_audio', needsAudio.toString());
+
+    try {
+        console.log('apiClientNew - Making parallel transcribe-and-ask request to:', `${appConfig.fastApiBaseUrl}/transcribe-and-ask/`);
+        
+        const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        console.log('apiClientNew - Transcribe-and-ask response status:', response.status);
+        console.log('apiClientNew - Transcribe-and-ask response ok:', response.ok);
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("Error from FastAPI backend during parallel transcribe-and-ask:", response.status, errorBody);
+            throw new Error(`Parallel transcribe-and-ask failed with status ${response.status}: ${errorBody}`);
+        }
+
+        const result: AskQuestionResponse = await response.json();
+        console.log('apiClientNew - Transcribe-and-ask response data:', result);
+        return result;
+
+    } catch (error) {
+        console.error("Error calling transcribe-and-ask endpoint:", error);
+        console.error("Error details:", {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : 'No stack trace',
+            name: error instanceof Error ? error.name : 'Unknown'
+        });
+        
+        if (error instanceof Error && error.message.startsWith('Parallel transcribe-and-ask failed')) {
+            throw error;
+        }
+        throw new Error("Failed to connect to the voice processing service. Please check the backend or try again.");
+    }
 } 

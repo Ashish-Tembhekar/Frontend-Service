@@ -6,8 +6,81 @@ import { Button } from '../ui/button';
 import { X, Mic, MicOff, Volume2 } from 'lucide-react';
 import { useChat } from '../../contexts/ChatContext';
 import { useToast } from '../../hooks/use-toast';
-import { transcribeAudioAPI as transcribeAudio } from '../../services/apiClientNew';
+import { transcribeAudioAPI as transcribeAudio, transcribeAndAskAPI } from '../../services/apiClientNew';
 import { cn } from '../../lib/utils';
+
+// Lottie Animation Component
+const LottieAnimation = ({ 
+  animationUrl, 
+  isPlaying = true, 
+  loop = true, 
+  className = "",
+  speed = 1
+}: { 
+  animationUrl: string; 
+  isPlaying?: boolean; 
+  loop?: boolean; 
+  className?: string;
+  speed?: number;
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const animationRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && containerRef.current && animationUrl) {
+      // Load Lottie from CDN
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js';
+      script.onload = () => {
+        if (containerRef.current && !animationRef.current && (window as any).lottie) {
+          fetch(animationUrl)
+            .then(response => response.json())
+            .then(animationData => {
+              animationRef.current = (window as any).lottie.loadAnimation({
+                container: containerRef.current,
+                renderer: 'svg',
+                loop: loop,
+                autoplay: isPlaying,
+                animationData: animationData,
+              });
+              animationRef.current.setSpeed(speed);
+            })
+            .catch(() => {
+              // Fallback to simple CSS animation if Lottie fails
+              if (containerRef.current) {
+                containerRef.current.innerHTML = '<div class="w-32 h-32 bg-gray-600 rounded-full animate-pulse"></div>';
+              }
+            });
+        }
+      };
+      
+      if (!(window as any).lottie) {
+        document.head.appendChild(script);
+      } else {
+        script.onload(new Event('load'));
+      }
+    }
+
+    return () => {
+      if (animationRef.current) {
+        animationRef.current.destroy();
+        animationRef.current = null;
+      }
+    };
+  }, [animationUrl, loop, speed]);
+
+  useEffect(() => {
+    if (animationRef.current) {
+      if (isPlaying) {
+        animationRef.current.play();
+      } else {
+        animationRef.current.pause();
+      }
+    }
+  }, [isPlaying]);
+
+  return <div ref={containerRef} className={className} />;
+};
 
 interface VoiceChatFullScreenProps {
   isOpen: boolean;
@@ -15,7 +88,7 @@ interface VoiceChatFullScreenProps {
 }
 
 export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProps) {
-  const { sendMessage, isLoadingResponse, messages, stopCurrentAudio } = useChat();
+  const { sendMessage, addProcessedMessages, isLoadingResponse, messages, stopCurrentAudio } = useChat();
   const { toast } = useToast();
   
   const [isRecording, setIsRecording] = useState(false);
@@ -240,60 +313,65 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       setCurrentUserText('Processing your message...');
 
       try {
-        console.log('VoiceChatFullScreen - About to call transcribeAudio');
-        const transcribeResponse = await transcribeAudio(audioBlob);
+        console.log('VoiceChatFullScreen - Using parallel transcribe-and-ask processing');
         
-        const { original_text, translated_text, detected_language } = transcribeResponse;
+        // Prepare conversation history
+        const currentMessages = messages.filter(m => m.role !== 'system').slice(-10);
+        let conversationHistoryString = '';
+        for (let i = 0; i < currentMessages.length - 1; i += 2) {
+          const userMsg = currentMessages[i];
+          const assistantMsg = currentMessages[i + 1];
+          if (userMsg && assistantMsg && userMsg.role === 'user' && assistantMsg.role === 'assistant') {
+            conversationHistoryString += `User: ${userMsg.content}\nAssistant: ${assistantMsg.content}\n\n`;
+          }
+        }
         
-        if (original_text.trim()) {
-          setCurrentUserText(original_text);
+        // Use parallel processing API - combines transcription and query processing
+        const response = await transcribeAndAskAPI(
+          audioBlob,
+          conversationHistoryString,
+          'auto', // Always use auto-detect for full-screen voice chat
+          true // needs audio for voice interaction
+        );
+        
+        console.log('VoiceChatFullScreen - Parallel processing response:', response);
+        
+        if (response.original_text && response.original_text.trim()) {
+          setCurrentUserText(response.original_text);
           
-          // Show original language in input bar and send original text to backend
+          // Show original language in input bar
           const inputElement = document.querySelector('textarea');
           if (inputElement) {
-            // Show the original language text in the input bar (for user to see what they said)
-            inputElement.value = original_text;
+            inputElement.value = response.original_text;
             inputElement.dispatchEvent(new Event('input', { bubbles: true }));
             
-            // Small delay to show the text, then send the English translation to backend
-            setTimeout(async () => {
-              console.log('VoiceChatFullScreen - About to call sendMessage with:');
-              console.log('VoiceChatFullScreen - English query (to backend):', translated_text);
-              console.log('VoiceChatFullScreen - Original text (for display):', original_text);
-              console.log('VoiceChatFullScreen - Detected language:', detected_language);
-              try {
-                // Send English translation to backend, display original text in chat, pass detected language
-                await sendMessage(translated_text, original_text, true, detected_language);
-              } catch (error) {
-                console.error('VoiceChatFullScreen - Error in sendMessage:', error);
-                toast({
-                  title: "Message Send Failed",
-                  description: "Could not send your message. Please try again.",
-                  variant: "destructive"
-                });
-              }
-              // Clear the input after sending
+            // Clear the input after a brief delay
+            setTimeout(() => {
               inputElement.value = '';
               inputElement.dispatchEvent(new Event('input', { bubbles: true }));
-            }, 500);
-          } else {
-            // Fallback: send directly if input element not found
-            console.log('VoiceChatFullScreen - Fallback: About to call sendMessage with:');
-            console.log('VoiceChatFullScreen - English query (to backend):', translated_text);
-            console.log('VoiceChatFullScreen - Original text (for display):', original_text);
-            console.log('VoiceChatFullScreen - Detected language:', detected_language);
-            try {
-              // Send English translation to backend, display original text in chat, pass detected language
-              await sendMessage(translated_text, original_text, true, detected_language);
-            } catch (error) {
-              console.error('VoiceChatFullScreen - Error in sendMessage (fallback):', error);
-              toast({
-                title: "Message Send Failed",
-                description: "Could not send your message. Please try again.",
-                variant: "destructive"
-              });
-            }
+            }, 1000);
           }
+          
+          // Add the messages to chat context directly since we have the full response
+          const userMessage = {
+            id: `msg_user_${Date.now()}`,
+            role: 'user' as const,
+            content: response.original_text, // Display original text
+            contentType: 'text' as const,
+            timestamp: new Date().toISOString(),
+          };
+
+          const assistantMessage = {
+            id: `msg_assistant_${Date.now() + 1}`,
+            role: 'assistant' as const,
+            content: response.answer,
+            contentType: 'html' as const,
+            timestamp: new Date().toISOString(),
+            audioData: response.audio,
+          };
+
+          // Use the new method to add pre-processed messages
+          addProcessedMessages(userMessage, assistantMessage);
           
         } else {
           toast({
@@ -311,11 +389,11 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
         }
       } catch (error) {
         toast({
-          title: "Processing Failed",
-          description: "Could not process the audio. Please try again.",
+          title: "Voice Processing Failed",
+          description: "Could not process the voice message. Please try again.",
           variant: "destructive"
         });
-        console.error(error);
+        console.error('VoiceChatFullScreen - Error in parallel processing:', error);
         setCurrentUserText('');
         // Auto-restart recording after a brief delay
         setTimeout(() => {
@@ -576,134 +654,105 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     return "text-muted-foreground";
   };
 
-  // Canvas animation for dynamic cloud/mist effect
-  const drawAnimation = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, width, height);
-
-    // Create gradient background
-    const gradient = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, width / 2);
-    gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)'); // Blue center
-    gradient.addColorStop(0.5, 'rgba(147, 197, 253, 0.1)'); // Light blue
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)'); // Transparent edges
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-
-    // Draw animated clouds/mist particles
-    const time = Date.now() * 0.001;
-    const particleCount = 60;
-    const baseSize = 15 + (audioLevel / 15); // Size based on audio level
-    const audioIntensity = audioLevel / 255; // Normalize audio level
-
-    for (let i = 0; i < particleCount; i++) {
-      const x = (width / 2) + Math.sin(time + i * 0.1) * (120 + audioLevel * 0.8);
-      const y = (height / 2) + Math.cos(time + i * 0.15) * (100 + audioLevel * 0.6);
-      const size = baseSize + Math.sin(time * 2 + i) * 8 + (audioIntensity * 15);
-      const opacity = 0.2 + (audioIntensity * 0.5);
-
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(147, 197, 253, ${opacity})`;
-      ctx.fill();
-    }
-
-    // Draw additional wave effects when recording
+  // Simple minimalistic animations - no external library needed
+  const getAnimationStyle = () => {
     if (isRecording) {
-      const waveCount = 4;
-      for (let w = 0; w < waveCount; w++) {
-        const waveRadius = 120 + w * 25 + Math.sin(time * 4) * 15;
-        const waveOpacity = 0.15 - w * 0.03;
-        const waveColor = w === 0 ? 'rgba(239, 68, 68, 0.2)' : `rgba(239, 68, 68, ${waveOpacity})`;
-        
-        ctx.beginPath();
-        ctx.arc(width / 2, height / 2, waveRadius, 0, Math.PI * 2);
-        ctx.strokeStyle = waveColor;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-      }
-    }
-
-    // Draw floating orbs that respond to audio
-    if (audioLevel > 50) {
-      const orbCount = Math.floor(audioIntensity * 8) + 2;
-      for (let o = 0; o < orbCount; o++) {
-        const orbX = (width / 2) + Math.cos(time * 0.5 + o) * (80 + audioLevel * 0.3);
-        const orbY = (height / 2) + Math.sin(time * 0.7 + o) * (60 + audioLevel * 0.2);
-        const orbSize = 8 + (audioIntensity * 12);
-        const orbOpacity = 0.4 + (audioIntensity * 0.3);
-        
-        ctx.beginPath();
-        ctx.arc(orbX, orbY, orbSize, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(59, 130, 246, ${orbOpacity})`;
-        ctx.fill();
-      }
-    }
-
-    // Continue animation
-    animationRef.current = requestAnimationFrame(drawAnimation);
-  }, [audioLevel, isRecording]);
-
-  // Start/stop animation
-  useEffect(() => {
-    if (isOpen) {
-      drawAnimation();
+      // Recording: Simple pulsing circle with audio-reactive scaling
+      const scale = 1 + (audioLevel / 255) * 0.3;
+      return {
+        transform: `scale(${scale})`,
+        background: 'linear-gradient(45deg, #ef4444, #f87171)',
+        animation: 'pulse 1.5s ease-in-out infinite'
+      };
+    } else if (isPlayingResponse) {
+      // Speaking: Gentle breathing effect
+      return {
+        background: 'linear-gradient(45deg, #10b981, #34d399)',
+        animation: 'breathe 2s ease-in-out infinite'
+      };
+    } else if (isLoadingResponse || isTranscribing) {
+      // Loading: Smooth rotation
+      return {
+        background: 'linear-gradient(45deg, #3b82f6, #60a5fa)',
+        animation: 'spin 2s linear infinite'
+      };
     } else {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
+      // Idle: Subtle pulse
+      return {
+        background: 'linear-gradient(45deg, #6b7280, #9ca3af)',
+        animation: 'slowPulse 3s ease-in-out infinite'
+      };
     }
+  };
 
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
-      }
-    };
-  }, [isOpen, drawAnimation]);
+  // Get animation speed based on audio level
+  const getAnimationSpeed = () => {
+    if (isRecording && audioLevel > 0) {
+      return 0.5 + (audioLevel / 255) * 1.5; // Speed between 0.5x and 2x based on audio
+    }
+    return 1;
+  };
 
   if (!isOpen || !isMounted) return null;
 
   const overlay = (
-    <div className="fixed inset-0 z-[9999] bg-white !bg-opacity-100 flex flex-col items-center justify-center voice-chat-fullscreen" style={{ backgroundColor: '#ffffff' }}>
-      {/* Canvas for dynamic animation */}
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none"
-        width={window.innerWidth}
-        height={window.innerHeight}
-      />
+    <div className="fixed inset-0 z-[9999] bg-white flex flex-col items-center justify-center voice-chat-fullscreen">
+      {/* Add custom CSS animations */}
+      <style jsx>{`
+        @keyframes breathe {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+        }
+        @keyframes slowPulse {
+          0%, 100% { opacity: 0.8; transform: scale(1); }
+          50% { opacity: 1; transform: scale(1.02); }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
 
-      {/* Main content overlay - centered (no text overlays) */}
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen w-full">
-        <div className="flex-1" />
+      {/* Main content overlay */}
+      <div className="flex flex-col items-center justify-center min-h-screen w-full">
+        {/* Center Animation Circle */}
+        <div className="flex-1 flex flex-col items-center justify-center">
+          <div className="relative flex flex-col items-center">
+            {/* Simple animated circle */}
+            <div className="mb-12">
+              <div 
+                className="w-48 h-48 rounded-full transition-all duration-300 shadow-lg"
+                style={getAnimationStyle()}
+              />
+            </div>
+            
+            {/* Clean status text */}
+            <div className="text-center">
+              <p className={`text-lg font-medium ${getStatusColor()}`}>
+                {getStatusMessage()}
+              </p>
+            </div>
+          </div>
+        </div>
 
-        {/* Bottom control buttons - fixed at bottom center */}
-        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center justify-center gap-8">
+        {/* Bottom control buttons - clean design */}
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center justify-center gap-6">
           {/* Microphone toggle button */}
           <Button
             onClick={toggleRecording}
             disabled={isTranscribing || isLoadingResponse}
             size="icon"
             className={cn(
-              "h-20 w-20 rounded-full transition-all duration-300 shadow-2xl border-4 border-white",
+              "h-16 w-16 rounded-full transition-all duration-200 shadow-lg",
               isRecording
-                ? "bg-red-500 hover:bg-red-600 text-white voice-chat-recording-pulse"
-                : "bg-blue-600 hover:bg-blue-700 text-white voice-chat-button-pulse"
+                ? "bg-red-500 hover:bg-red-600 text-white"
+                : "bg-gray-700 hover:bg-gray-800 text-white"
             )}
           >
             {isRecording ? (
-              <MicOff className="h-10 w-10" />
+              <MicOff className="h-6 w-6" />
             ) : (
-              <Mic className="h-10 w-10" />
+              <Mic className="h-6 w-6" />
             )}
           </Button>
 
@@ -711,9 +760,9 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           <Button
             onClick={onClose}
             size="icon"
-            className="h-20 w-20 rounded-full bg-gray-600 hover:bg-gray-700 text-white shadow-2xl transition-all duration-300 voice-chat-button-pulse border-4 border-white"
+            className="h-16 w-16 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-lg transition-all duration-200"
           >
-            <X className="h-10 w-10" />
+            <X className="h-6 w-6" />
           </Button>
         </div>
       </div>

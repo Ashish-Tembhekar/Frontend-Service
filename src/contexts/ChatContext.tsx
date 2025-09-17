@@ -17,6 +17,7 @@ interface ChatContextType {
   isLoadingResponse: boolean;
   isHistoryPanelOpen: boolean;
   sendMessage: (userInput: string, originalText?: string, isVoiceMessage?: boolean, detectedLang?: string) => Promise<void>;
+  addProcessedMessages: (userMessage: Message, assistantMessage: Message) => void;
   uploadFile: (file: File) => Promise<void>;
   startNewChat: () => void;
   loadChatThread: (threadId: string) => void;
@@ -193,6 +194,25 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       currentAudioElement.pause();
       currentAudioElement.currentTime = 0;
       setCurrentAudioElement(null);
+    }
+  };
+
+  // Function to add pre-processed messages (for parallel voice processing)
+  const addProcessedMessages = (userMessage: Message, assistantMessage: Message) => {
+    if (!currentChatThreadId) return;
+
+    const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
+    const newTitle = isNewThread ? (userMessage.content.substring(0, 30) + (userMessage.content.length > 30 ? '...' : '')) : undefined;
+
+    setMessages(prevMessages => {
+      const updatedMessages = [...prevMessages, userMessage, assistantMessage];
+      updateMessagesInCurrentThread(updatedMessages, newTitle);
+      return updatedMessages;
+    });
+
+    // Auto-play audio if available
+    if (assistantMessage.audioData) {
+      playAudioResponse(assistantMessage.audioData);
     }
   };
 
@@ -399,6 +419,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isLoadingResponse,
       isHistoryPanelOpen,
       sendMessage,
+      addProcessedMessages,
       uploadFile,
       startNewChat,
       loadChatThread,

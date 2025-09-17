@@ -20,10 +20,10 @@ export function MessageItem({ message }: MessageItemProps) {
         <div className="my-4 text-center">
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-xs text-slate-600 dark:text-slate-400">
-                <div className="w-1 h-1 bg-slate-400 dark:bg-slate-500 rounded-full"></div>
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 border border-gray-200 rounded-full text-xs text-gray-600">
+                <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
                 {message.content}
-                <div className="w-1 h-1 bg-slate-400 dark:bg-slate-500 rounded-full"></div>
+                <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
               </div>
             </TooltipTrigger>
             <TooltipContent>
@@ -37,158 +37,124 @@ export function MessageItem({ message }: MessageItemProps) {
   
   if (!isUser && message.isLoading) {
     return (
-      <TooltipProvider>
-        <div className="flex items-center gap-3 my-6 py-4 px-4 justify-start">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full shadow-lg">
-                <Loader2 className="h-5 w-5 text-white animate-spin" />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>AI is thinking...</p>
-            </TooltipContent>
-          </Tooltip>
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">AI Assistant</span>
-            <span className="text-sm text-slate-500 dark:text-slate-400 italic">Thinking...</span>
+      <div className="flex justify-start py-6">
+        <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-2xl shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+            </div>
+            <span className="text-sm text-gray-600 font-medium">Thinking...</span>
           </div>
         </div>
-      </TooltipProvider>
+      </div>
     );
   }
 
   return (
-    <TooltipProvider>
-      <div className={`flex items-end gap-3 my-6 message-item ${isUser ? 'justify-end' : 'justify-start'}`}>
-        {!isUser && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full shadow-lg">
-                <Bot className="h-5 w-5 text-white" />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>AI Assistant</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
-        <div className={`flex flex-col max-w-[75%] ${isUser ? 'items-end' : 'items-start'}`}>
-          {!isUser && (
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 ml-1">
-              AI Assistant
-            </span>
-          )}
-          <div
-            className={`rounded-2xl px-4 py-3 shadow-sm ${
-              isUser 
-                ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' 
-                : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-            }`}
-          >
-            {/* Render user messages with Markdown, but assistant messages directly as HTML without prose styling */ }
-            {isUser ? (
-              <MarkdownRenderer content={message.content} />
-            ) : (
-              <div 
-                className="max-w-none break-words prose prose-sm dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: message.content }} 
-              />
-            )}
-
-            {/* Audio player for assistant's voice responses */}
-            {!isUser && message.audioData && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="mt-3">
-                    <audio 
-                      controls 
-                      src={`data:${message.audioData.mime_type};base64,${message.audioData.audio_base64}`}
-                      className="w-full h-10 rounded-lg"
-                    >
-                      Your browser does not support the audio element.
-                    </audio>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Voice response from AI</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
-
-            {/* Developer mode: collapsible debug details */}
-            {!isUser && appConfig.developerMode && (() => {
-              const debugGraph = (message as any).debug_graph_context as string | undefined;
-              const debugDocs = (message as any).debug_filtered_docs as Array<{ content_preview: string; metadata: Record<string, any> }> | undefined;
-              const hasAnyDebug = Boolean(debugGraph) || Array.isArray(debugDocs);
-              if (!hasAnyDebug) return null;
-              // Local component state for expand/collapse
-              const [devOpen, setDevOpen] = useState(false);
-              const graphCount = useMemo(() => (debugGraph ? debugGraph.split('\n').filter(Boolean).length : 0), [debugGraph]);
-              const docsCount = useMemo(() => (Array.isArray(debugDocs) ? debugDocs.length : 0), [debugDocs]);
-              return (
-                <div className="mt-4 border-t pt-3">
-                  <button
-                    type="button"
-                    onClick={() => setDevOpen(v => !v)}
-                    className="text-xs inline-flex items-center gap-2 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    <span className="font-medium">Developer details</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">graph {graphCount}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800">docs {docsCount}</span>
-                    <span className="ml-1 text-[10px] opacity-70">{devOpen ? 'Hide' : 'Show'}</span>
-                  </button>
-
-                  {devOpen && (
-                    <div className="mt-3 space-y-3">
-                      {debugGraph && (
-                        <div>
-                          <div className="text-xs font-semibold text-slate-500 mb-1">Graph context</div>
-                          <pre className="text-xs whitespace-pre-wrap bg-slate-50 dark:bg-slate-900 p-2 rounded-md border border-slate-200 dark:border-slate-700 max-h-48 overflow-auto">
-                            {debugGraph}
-                          </pre>
-                        </div>
-                      )}
-                      {Array.isArray(debugDocs) && (
-                        <div>
-                          <div className="text-xs font-semibold text-slate-500 mb-1">Top documents after reranking</div>
-                          <div className="space-y-2 max-h-60 overflow-auto">
-                            {debugDocs.map((d, idx) => (
-                              <div key={idx} className="text-xs p-2 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
-                                <div className="font-medium">#{idx + 1} {d.metadata?.source || 'unknown source'} {d.metadata?.page != null ? `(p${d.metadata.page})` : ''}</div>
-                                <div className="text-[11px] text-slate-600 dark:text-slate-400">{d.metadata?.heading || ''}</div>
-                                <div className="mt-1 text-[11px] text-slate-700 dark:text-slate-300 whitespace-pre-wrap">{d.content_preview}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-          
-          <div className={`text-xs text-slate-500 dark:text-slate-400 mt-2 ${
-            isUser ? 'text-right' : 'text-left'
-          }`}>
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+    <div className={`flex gap-4 py-6 ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in-0 slide-in-from-bottom-2 duration-500`}>
+      {!isUser && (
+        <div className="flex-shrink-0">
+          <div className="w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center shadow-sm">
+            <Bot className="h-4 w-4 text-white" />
           </div>
         </div>
-        {isUser && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-slate-500 to-slate-600 rounded-full shadow-sm">
-                <User className="h-4 w-4 text-white" />
+      )}
+      
+      <div className={`flex flex-col max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
+        <div
+          className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 ${
+            isUser 
+              ? 'bg-gray-700 text-white' 
+              : 'bg-gray-100 text-gray-900'
+          }`}
+        >
+          {/* Render user messages with Markdown, but assistant messages directly as HTML without prose styling */ }
+          {isUser ? (
+            <MarkdownRenderer content={message.content} />
+          ) : (
+            <div 
+              className="max-w-none break-words prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: message.content }} 
+            />
+          )}
+
+          {/* Audio player for assistant's voice responses */}
+          {!isUser && message.audioData && (
+            <div className="mt-3">
+              <audio 
+                controls 
+                src={`data:${message.audioData.mime_type};base64,${message.audioData.audio_base64}`}
+                className="w-full h-8 rounded-lg"
+              >
+                Your browser does not support the audio element.
+              </audio>
+            </div>
+          )}
+
+          {/* Developer mode: collapsible debug details */}
+          {!isUser && appConfig.developerMode && (() => {
+            const debugGraph = (message as any).debug_graph_context as string | undefined;
+            const debugDocs = (message as any).debug_filtered_docs as Array<{ content_preview: string; metadata: Record<string, any> }> | undefined;
+            const hasAnyDebug = Boolean(debugGraph) || Array.isArray(debugDocs);
+            if (!hasAnyDebug) return null;
+            // Local component state for expand/collapse
+            const [devOpen, setDevOpen] = useState(false);
+            const graphCount = useMemo(() => (debugGraph ? debugGraph.split('\n').filter(Boolean).length : 0), [debugGraph]);
+            const docsCount = useMemo(() => (Array.isArray(debugDocs) ? debugDocs.length : 0), [debugDocs]);
+            return (
+              <div className="mt-4 border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() => setDevOpen(v => !v)}
+                  className="text-xs inline-flex items-center gap-2 px-2 py-1 rounded-md border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100"
+                >
+                  <span className="font-medium">Developer details</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200">graph {graphCount}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200">docs {docsCount}</span>
+                  <span className="ml-1 text-[10px] opacity-70">{devOpen ? 'Hide' : 'Show'}</span>
+                </button>
+
+                {devOpen && (
+                  <div className="mt-3 space-y-3">
+                    {debugGraph && (
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 mb-1">Graph context</div>
+                        <pre className="text-xs whitespace-pre-wrap bg-gray-50 p-2 rounded-md border border-gray-200 max-h-48 overflow-auto">
+                          {debugGraph}
+                        </pre>
+                      </div>
+                    )}
+                    {Array.isArray(debugDocs) && (
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500 mb-1">Top documents after reranking</div>
+                        <div className="space-y-2 max-h-60 overflow-auto">
+                          {debugDocs.map((d, idx) => (
+                            <div key={idx} className="text-xs p-2 rounded-md border border-gray-200 bg-gray-50">
+                              <div className="font-medium">#{idx + 1} {d.metadata?.source || 'unknown source'} {d.metadata?.page != null ? `(p${d.metadata.page})` : ''}</div>
+                              <div className="text-[11px] text-gray-600">{d.metadata?.heading || ''}</div>
+                              <div className="mt-1 text-[11px] text-gray-700 whitespace-pre-wrap">{d.content_preview}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Your message</p>
-            </TooltipContent>
-          </Tooltip>
-        )}
+            );
+          })()}
+        </div>
       </div>
-    </TooltipProvider>
+      
+      {isUser && (
+        <div className="flex-shrink-0">
+          <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
+            <User className="h-4 w-4 text-white" />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

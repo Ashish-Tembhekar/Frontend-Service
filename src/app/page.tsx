@@ -4,30 +4,43 @@
 import { ChatView } from '../components/Chat/ChatView';
 import { ChatHistoryPanel } from '../components/Chat/History/ChatHistoryPanel';
 import { useChat } from '../contexts/ChatContext'; // Import useChat
+import { useWebSocket } from '../hooks/useWebSocket';
+import { appConfig } from '../lib/config';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import { useEffect } from 'react';
 
 export default function FullScreenChatPage() {
   const { isHistoryPanelOpen } = useChat(); // Get panel state
+  
+  // WebSocket connection for real-time chat updates
+  const wsUrl = appConfig.fastApiBaseUrl.replace('http', 'ws') + '/ws/dashboard';
+  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocket(wsUrl);
+  
+  // Debug WebSocket connection
+  useEffect(() => {
+    console.log('🔌 Chat WebSocket connected:', isConnected);
+    console.log('🔌 Chat User ID:', userId);
+    console.log('🔌 Chat Session ID:', sessionId);
+  }, [isConnected, userId, sessionId]);
+
+  // Handle WebSocket messages for chat
+  useEffect(() => {
+    if (lastMessage) {
+      console.log('📨 Processing WebSocket message in Chat:', lastMessage);
+      // Add any chat-specific message handling here
+    }
+  }, [lastMessage]);
 
   return (
     <TooltipProvider>
-      <main className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900">
-        {/* ChatHistoryPanel will control its own visibility and width via isHistoryPanelOpen */}
+      <main className="flex h-screen overflow-hidden bg-white">
+        {/* Clean minimal sidebar */}
         <ChatHistoryPanel />
-        <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out relative ${
-        isHistoryPanelOpen ? 'ml-0' : ''
+        
+        {/* Main chat area - full width when sidebar closed */}
+        <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
+          isHistoryPanelOpen ? 'ml-0' : ''
         }`}>
-          {/* Add a subtle background pattern */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(156,163,175,0.1)_1px,transparent_0)] bg-[length:20px_20px] opacity-50"></div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Subtle background pattern for visual appeal</p>
-            </TooltipContent>
-          </Tooltip>
-          
-          {/* The ChatView takes up the remaining space */}
           <ChatView />
         </div>
       </main>

@@ -10,7 +10,7 @@ import { useToast } from '../../hooks/use-toast';
 import { appConfig } from '../../lib/config';
 import { cn, validateFileSize } from '../../lib/utils';
 import { Alert, AlertTitle, AlertDescription } from '../ui/alert';
-import { transcribeAudioAPI as transcribeAudio } from '../../services/apiClientNew';
+import { transcribeAudioAPI as transcribeAudio, transcribeAndAskAPI } from '../../services/apiClientNew';
 import { VoiceChatFullScreen } from './VoiceChatFullScreen';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 export function ChatInputBar() {
   // Fresh compilation to break cache
   const [inputValue, setInputValue] = useState('');
-  const { sendMessage, uploadFile, isLoadingResponse, messages, stopCurrentAudio } = useChat();
+  const { sendMessage, addProcessedMessages, uploadFile, isLoadingResponse, messages, stopCurrentAudio } = useChat();
   
   // Language options
   const languageOptions = [
@@ -173,54 +173,81 @@ export function ChatInputBar() {
       stream.getTracks().forEach(track => track.stop());
       
       setIsTranscribing(true);
-      setInputValue("Transcribing audio...");
+      setInputValue("Processing voice message...");
+      setExpectingAudioResponse(true);
 
       try {
-        console.log('ChatInputBar - About to call transcribeAudio');
-        const transcribeResponse = await transcribeAudio(audioBlob);
+        console.log('ChatInputBar - Using parallel transcribe-and-ask processing');
         
-        const { original_text, translated_text, detected_language } = transcribeResponse;
+        // Prepare conversation history
+        const currentMessages = messages.filter(m => m.role !== 'system').slice(-10);
+        let conversationHistoryString = '';
+        for (let i = 0; i < currentMessages.length - 1; i += 2) {
+          const userMsg = currentMessages[i];
+          const assistantMsg = currentMessages[i + 1];
+          if (userMsg && assistantMsg && userMsg.role === 'user' && assistantMsg.role === 'assistant') {
+            conversationHistoryString += `User: ${userMsg.content}\nAssistant: ${assistantMsg.content}\n\n`;
+          }
+        }
         
-        if (original_text.trim()) {
-            // Show original language text in input bar (for user to see what they said)
-            setInputValue(original_text);
-            
-            // Then auto-send English translation to backend after brief delay
-            setTimeout(async () => {
-              console.log('ChatInputBar - About to call sendMessage with:');
-              console.log('ChatInputBar - English query (to backend):', translated_text);
-              console.log('ChatInputBar - Original text (for display):', original_text);
-              console.log('ChatInputBar - Detected language:', detected_language);
-              console.log('ChatInputBar - Selected language:', selectedLanguage);
-              setExpectingAudioResponse(true); // Set flag to expect audio response
-              try {
-                // Use selected language if not auto, otherwise use detected language
-                const languageToUse = selectedLanguage === 'auto' ? detected_language : selectedLanguage;
-                await sendMessage(translated_text, original_text, true, languageToUse);
-              } catch (error) {
-                console.error('ChatInputBar - Error in sendMessage:', error);
-                toast({
-                  title: "Message Send Failed",
-                  description: "Could not send your message. Please try again.",
-                  variant: "destructive"
-                });
-                setExpectingAudioResponse(false); // Reset flag on error
-              }
-              setInputValue(''); // Clear input after sending
-            }, 500);
+        // Use parallel processing API - combines transcription and query processing
+        const response = await transcribeAndAskAPI(
+          audioBlob,
+          conversationHistoryString,
+          selectedLanguage,
+          true // needs audio for voice interaction
+        );
+        
+        console.log('ChatInputBar - Parallel processing response:', response);
+        
+        if (response.original_text && response.original_text.trim()) {
+          // Show original language text in input bar briefly
+          setInputValue(response.original_text);
+          
+          // Add the messages to chat context directly since we have the full response
+          const userMessage = {
+            id: `msg_user_${Date.now()}`,
+            role: 'user' as const,
+            content: response.original_text, // Display original text
+            contentType: 'text' as const,
+            timestamp: new Date().toISOString(),
+          };
+
+          const assistantMessage = {
+            id: `msg_assistant_${Date.now() + 1}`,
+            role: 'assistant' as const,
+            content: response.answer,
+            contentType: 'html' as const,
+            timestamp: new Date().toISOString(),
+            audioData: response.audio,
+          };
+
+          // Use the new method to add pre-processed messages
+          addProcessedMessages(userMessage, assistantMessage);
+          
+          setTimeout(() => {
+            setInputValue(''); // Clear input after showing transcription
+          }, 1000);
+          
         } else {
-            toast({ title: "No speech detected", description: "Couldn't detect any speech in the audio.", variant: "destructive" });
-            setExpectingAudioResponse(false); // Reset flag if no speech detected
+          toast({ 
+            title: "No speech detected", 
+            description: "Couldn't detect any speech in the audio.", 
+            variant: "destructive" 
+          });
+          setExpectingAudioResponse(false);
         }
       } catch (error) {
-        toast({ title: "Transcription Failed", description: "Could not process the audio. Please try again.", variant: "destructive" });
-        console.error(error);
-        setExpectingAudioResponse(false); // Reset flag if transcription fails
+        console.error('ChatInputBar - Error in parallel processing:', error);
+        toast({ 
+          title: "Voice Processing Failed", 
+          description: "Could not process the voice message. Please try again.", 
+          variant: "destructive" 
+        });
+        setExpectingAudioResponse(false);
       } finally {
-        setInputValue('');
         setIsTranscribing(false);
         mediaRecorderRef.current = null;
-        // Don't set expectingAudioResponse to false here, as we might still be processing a valid request
       }
     };
 
@@ -334,10 +361,9 @@ export function ChatInputBar() {
   const isMicDisabled = isLoadingResponse || isTranscribing;
 
   return (
-  <TooltipProvider>
-    <div className="w-full px-4 sm:px-6 py-4">
+    <div className="w-full px-4 py-4 bg-white">
       {hasMicPermission === false && (
-        <Alert variant="destructive" className="mb-3 max-w-2xl sm:max-w-3xl md:max-w-4xl mx-auto">
+        <Alert variant="destructive" className="mb-4 max-w-4xl mx-auto">
           <AlertTitle>Microphone Access Denied</AlertTitle>
           <AlertDescription>
             Please enable microphone permissions in your browser settings to use voice input.
@@ -345,45 +371,39 @@ export function ChatInputBar() {
         </Alert>
       )}
 
-      <div className="flex flex-col gap-3 p-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md rounded-2xl w-full max-w-2xl sm:max-w-3xl md:max-w-4xl border border-white/20 dark:border-slate-700/20 shadow-lg mx-auto card-modern">
+      <div className="max-w-4xl mx-auto">
+        {/* Clean input container */}
+        <div className="relative flex items-end gap-3 p-3 bg-gray-100 rounded-2xl border border-gray-300 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300 hover:shadow-sm focus-within:shadow-md transition-all duration-300">
+          {/* Textarea */}
+          <div className="flex-1 min-h-[44px] flex items-center">
+            <Textarea
+              value={inputValue}
+              onChange={handleInputChange}
+              onKeyPress={handleKeyPress}
+              placeholder={isRecording ? "Recording..." : (isTranscribing ? "Transcribing..." : "Message AI Assistant...")}
+              className="flex-1 resize-none border-none bg-transparent focus:ring-0 text-gray-900 placeholder:text-gray-500 text-base leading-6"
+              rows={1}
+              disabled={isLoadingResponse || isRecording || isTranscribing}
+            />
+          </div>
 
-        {/* Textarea */}
-        <div className="flex items-center w-full">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Textarea
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyPress={handleKeyPress}
-                placeholder={isRecording ? "Recording..." : (isTranscribing ? "Transcribing..." : "Ask AI Assistant anything...")}
-                className="chat-input-bar-textarea-theme bg-transparent border-none focus:ring-0 resize-none text-slate-700 dark:text-slate-300 placeholder:text-slate-500 dark:placeholder:text-slate-400"
-                rows={1}
-                disabled={isLoadingResponse || isRecording || isTranscribing}
-              />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Press Enter to send, Shift+Enter for new line</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        {/* Buttons & Dropdown */}
-        <div className="flex items-center justify-between w-full pl-1">
-          <div className="flex items-center gap-1">
+          {/* Action buttons */}
+          <div className="flex items-center gap-2">
+            {/* File upload */}
             <Button 
               variant="ghost" 
               size="icon" 
               onClick={() => fileInputRef.current?.click()} 
               disabled={isLoadingResponse || isRecording || isTranscribing}
-              className="chat-input-bar-plus-button-theme"
+              className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
               aria-label="Upload file"
             >
-              <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
+              <Plus className="h-4 w-4" />
             </Button>
 
-            {/* Language Dropdown */}
+            {/* Language selector - compact */}
             <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
-              <SelectTrigger className="w-[140px] h-9 text-xs">
+              <SelectTrigger className="w-[120px] h-9 text-sm border-gray-200">
                 <Globe className="h-3 w-3 mr-1" />
                 <SelectValue placeholder="Language" />
               </SelectTrigger>
@@ -395,41 +415,42 @@ export function ChatInputBar() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div className="flex items-center gap-1">
+            {/* Voice controls */}
             <Button 
               onClick={handleMicClick}
               disabled={isMicDisabled && !isAudioPlaying}
               size="icon" 
               className={cn(
-                "h-10 w-10 rounded-full transition-all duration-200 btn-modern",
+                "h-9 w-9 rounded-full transition-all duration-200",
                 isRecording
-                  ? "bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 animate-pulse"
+                  ? "bg-red-100 text-red-600 animate-pulse"
                   : isAudioPlaying
-                    ? "bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/40"
-                    : "bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                    ? "bg-red-100 text-red-600 hover:bg-red-200"
+                    : "bg-gray-600 text-white hover:bg-white hover:text-gray-600"
               )}
               aria-label={isAudioPlaying ? "Stop speaking" : (isRecording ? "Stop recording" : "Start recording")}
             >
               {isAudioPlaying ? <Square className="h-4 w-4" /> : (isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />)}
             </Button>
 
+            {/* Voice chat */}
             <Button 
               onClick={() => setIsVoiceChatOpen(true)}
               disabled={isLoadingResponse || isRecording || isTranscribing}
               size="icon" 
-              className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-all duration-200 btn-modern"
+              className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
               aria-label="Start voice chat"
             >
               <Phone className="h-4 w-4" />
             </Button>
 
+            {/* Send button */}
             <Button 
               onClick={handleSubmit} 
               disabled={isLoadingResponse || !inputValue.trim() || isRecording || isTranscribing} 
               size="icon" 
-              className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed btn-modern"
+              className="h-9 w-9 rounded-full bg-gray-500 text-white hover:bg-white hover:text-gray-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md"
               aria-label="Send message"
             >
               <Send className="h-4 w-4" />
@@ -437,19 +458,25 @@ export function ChatInputBar() {
           </div>
         </div>
 
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          className="hidden"
-          accept=".pdf" 
-        />
-        <VoiceChatFullScreen 
-          isOpen={isVoiceChatOpen} 
-          onClose={() => setIsVoiceChatOpen(false)} 
-        />
+        {/* Footer text */}
+        <div className="mt-2 text-center">
+          <p className="text-xs text-gray-500">
+            Technical Manual Assistant may produce inaccurate information. <span className="text-gray-600 hover:underline cursor-pointer">Privacy Notice</span>
+          </p>
+        </div>
       </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileChange}
+        className="hidden"
+        accept=".pdf" 
+      />
+      <VoiceChatFullScreen 
+        isOpen={isVoiceChatOpen} 
+        onClose={() => setIsVoiceChatOpen(false)} 
+      />
     </div>
-  </TooltipProvider>
-);
+  );
 }

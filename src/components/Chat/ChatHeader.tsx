@@ -17,86 +17,61 @@ export function ChatHeader({ isPopupMode = false }: ChatHeaderProps) {
   const { toggleHistoryPanel, isHistoryPanelOpen, startNewChat } = useChat();
   
 return (
-    <TooltipProvider>
-      <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b-2 border-slate-200/60 dark:border-slate-700/60 bg-white/50 dark:bg-slate-900/50 backdrop-blur-md shadow-sm h-16 shrink-0 sticky top-0 z-10">
-        <div className="flex items-center gap-2 sm:gap-3">
-          {!isPopupMode && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={toggleHistoryPanel}
-                  aria-label={isHistoryPanelOpen ? "Close history panel" : "Open history panel"}
-                  className="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200"
-                >
-                  {isHistoryPanelOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{isHistoryPanelOpen ? "Close chat history" : "Open chat history"}</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
+    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white h-14 shrink-0 sticky top-0 z-20">
+      {/* Left side - minimal controls */}
+      <div className="flex items-center gap-2">
+        {!isPopupMode && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleHistoryPanel}
+            aria-label={isHistoryPanelOpen ? "Close history panel" : "Open history panel"}
+            className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
+          >
+            {isHistoryPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </Button>
+        )}
 
-          {!isPopupMode && !isHistoryPanelOpen && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={startNewChat}
-                  aria-label="Start new chat"
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <PlusCircle className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Start new chat</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
+        {!isPopupMode && !isHistoryPanelOpen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={startNewChat}
+            aria-label="Start new chat"
+            className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
+          >
+            <PlusCircle className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
 
-        <div className="flex items-center gap-3">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link href="/dashboard">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Go to dashboard"
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <BarChart3 className="h-5 w-5" />
-                </Button>
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Go to dashboard</p>
-            </TooltipContent>
-          </Tooltip>
+      {/* Center - title */}
+      {/* <div className="flex-1 text-center">
+        <h1 className="text-lg font-semibold text-gray-900">Technical Manual Assistant</h1>
+      </div> */}
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-3 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full">
-                <Avatar className="h-7 w-7 text-sm border-2 border-white dark:border-slate-700 shadow-sm">
-                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-xs font-medium">
-                    GU
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300 hidden sm:inline">
-                  Guest User
-                </span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>Guest user account</p>
-            </TooltipContent>
-          </Tooltip>
+      {/* Right side - minimal actions */}
+      <div className="flex items-center gap-2">
+        <Link href="/dashboard">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Go to dashboard"
+            className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
+          >
+            <BarChart3 className="h-4 w-4" />
+          </Button>
+        </Link>
+
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full">
+          <Avatar className="h-6 w-6">
+            <AvatarFallback className="bg-gray-600 text-white text-xs font-medium">
+              GU
+            </AvatarFallback>
+          </Avatar>
+          <span className="text-sm text-gray-600 hidden sm:inline">Guest</span>
         </div>
       </div>
-    </TooltipProvider>
+    </div>
   );
 }

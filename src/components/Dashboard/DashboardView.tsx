@@ -21,7 +21,10 @@ import {
   FileX,
   AlertCircle,
   ArrowLeft,
-  Layers
+  Layers,
+  Wifi,
+  WifiOff,
+  User
 } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -102,13 +105,15 @@ export function DashboardView() {
 
   // WebSocket connection for real-time updates
   const wsUrl = appConfig.fastApiBaseUrl.replace('http', 'ws') + '/ws/dashboard';
-  const { isConnected, lastMessage } = useWebSocket(wsUrl);
+  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocket(wsUrl);
   
   // Debug WebSocket connection
   useEffect(() => {
     console.log('🔌 WebSocket URL:', wsUrl);
     console.log('🔌 WebSocket connected:', isConnected);
-  }, [wsUrl, isConnected]);
+    console.log('🔌 User ID:', userId);
+    console.log('🔌 Session ID:', sessionId);
+  }, [wsUrl, isConnected, userId, sessionId]);
 
   // Fetch data functions
   const fetchFiles = async () => {
@@ -267,13 +272,74 @@ export function DashboardView() {
     fetchData();
   }, []);
 
+  // Connection status helper functions
+  const getConnectionStatusIcon = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return <Wifi className="w-4 h-4 text-green-500" />;
+      case 'connecting':
+      case 'reconnecting':
+        return <RefreshCw className="w-4 h-4 text-yellow-500 animate-spin" />;
+      case 'disconnected':
+        return <WifiOff className="w-4 h-4 text-red-500" />;
+      default:
+        return <AlertCircle className="w-4 h-4 text-gray-500" />;
+    }
+  };
+
+  const getConnectionStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return 'Connected';
+      case 'connecting':
+        return 'Connecting...';
+      case 'reconnecting':
+        return 'Reconnecting...';
+      case 'disconnected':
+        return 'Disconnected';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return 'text-green-700 bg-green-50 border-green-200';
+      case 'connecting':
+      case 'reconnecting':
+        return 'text-yellow-700 bg-yellow-50 border-yellow-200';
+      case 'disconnected':
+        return 'text-red-700 bg-red-50 border-red-200';
+      default:
+        return 'text-gray-700 bg-gray-50 border-gray-200';
+    }
+  };
+
   // Handle WebSocket messages for real-time updates
   useEffect(() => {
     if (lastMessage) {
       console.log('📨 Processing WebSocket message in DashboardView:', lastMessage);
       
+      // Handle user connection notifications
+      if (lastMessage.type === 'user_connected') {
+        console.log('👤 User connected:', lastMessage.user_id);
+        toast({
+          title: "User Connected",
+          description: `User ${lastMessage.user_id?.slice(-8)} joined`,
+          duration: 3000,
+        });
+      } else if (lastMessage.type === 'user_disconnected') {
+        console.log('👤 User disconnected:', lastMessage.user_id);
+        toast({
+          title: "User Disconnected", 
+          description: `User ${lastMessage.user_id?.slice(-8)} left`,
+          duration: 3000,
+        });
+      }
+      
       // Update files list when we receive status updates, job updates, or file deletions
-      if (lastMessage.type === 'status_update' || 
+      else if (lastMessage.type === 'status_update' || 
           lastMessage.type === 'file_deleted' || 
           lastMessage.type === 'job_status_update' ||
           lastMessage.type === 'pdf_processing_complete' ||
@@ -282,7 +348,7 @@ export function DashboardView() {
         refreshData();
       }
     }
-  }, [lastMessage]);
+  }, [lastMessage, toast]);
 
   if (isLoading) {
     return (
@@ -295,6 +361,42 @@ export function DashboardView() {
 
      return (
      <div className="container mx-auto p-6 space-y-6 pb-8">
+      {/* Connection Status Bar */}
+      <div className={`flex items-center justify-between rounded-lg border p-4 ${getConnectionStatusColor()}`}>
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            {getConnectionStatusIcon()}
+            <span className="text-sm font-medium">
+              Real-time updates: {getConnectionStatusText()}
+            </span>
+          </div>
+          
+          <div className="flex items-center space-x-2 text-sm opacity-75">
+            <User className="w-3 h-3" />
+            <span>User: {userId.slice(-8)}</span>
+          </div>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          {connectionStatus !== 'connected' && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => window.location.reload()}
+              className="text-xs"
+            >
+              <RefreshCw className="w-3 h-3 mr-1" />
+              Refresh
+            </Button>
+          )}
+          
+          {connectionStatus === 'connected' && (
+            <Badge variant="secondary" className="text-xs">
+              Session: {sessionId.slice(-6)}
+            </Badge>
+          )}
+        </div>
+      </div>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -356,53 +458,53 @@ export function DashboardView() {
       {/* Statistics Cards */}
       {dashboardStats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Files</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium text-gray-700">Total Files</CardTitle>
+              <FileText className="h-4 w-4 text-gray-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{dashboardStats.total_files}</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-2xl font-bold text-gray-900">{dashboardStats.total_files}</div>
+              <p className="text-xs text-gray-600">
                 {dashboardStats.status_counts.completed} completed, {dashboardStats.status_counts.processing} processing
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Chunks</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium text-gray-700">Total Chunks</CardTitle>
+              <BarChart3 className="h-4 w-4 text-gray-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{dashboardStats.total_chunks}</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-2xl font-bold text-gray-900">{dashboardStats.total_chunks}</div>
+              <p className="text-xs text-gray-600">
                 Across all processed files
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Size</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium text-gray-700">Total Size</CardTitle>
+              <FileText className="h-4 w-4 text-gray-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{dashboardStats.total_size_mb.toFixed(1)} MB</div>
-              <p className="text-xs text-muted-foreground">
+              <div className="text-2xl font-bold text-gray-900">{dashboardStats.total_size_mb.toFixed(1)} MB</div>
+              <p className="text-xs text-gray-600">
                 Combined file size
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Failed Files</CardTitle>
-              <FileX className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium text-gray-700">Failed Files</CardTitle>
+              <FileX className="h-4 w-4 text-gray-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">{dashboardStats.status_counts.failed}</div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-gray-600">
                 Processing errors
               </p>
             </CardContent>
@@ -412,31 +514,33 @@ export function DashboardView() {
 
       {/* Main Content */}
       <Tabs defaultValue="files" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="files">Files</TabsTrigger>
-          <TabsTrigger value="stats">Statistics</TabsTrigger>
-          <TabsTrigger value="recent">Recent Events</TabsTrigger>
+        <TabsList className="bg-gray-100 border-gray-200">
+          <TabsTrigger value="files" className="data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">Files</TabsTrigger>
+          <TabsTrigger value="stats" className="data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">Statistics</TabsTrigger>
+          <TabsTrigger value="recent" className="data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">Recent Events</TabsTrigger>
         </TabsList>
 
                                    <TabsContent value="files" className="space-y-4">
-            <Card className="flex flex-col mb-8">
-             <CardHeader className="flex-shrink-0 pb-2">
-               <CardTitle className="text-lg">File List</CardTitle>
+            <Card className="flex flex-col mb-8 bg-white border-gray-200 shadow-sm">
+             <CardHeader className="flex-shrink-0 pb-2 bg-gray-50 border-b border-gray-200">
+               <CardTitle className="text-lg text-gray-800">File List</CardTitle>
              </CardHeader>
              <CardContent className="flex-1 min-h-0 p-0">
                                <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
                 <div className="space-y-4 p-6 pr-8">
                   {files.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p>No files uploaded yet</p>
-                      <p className="text-sm">Upload your first file to get started</p>
+                    <div className="text-center py-8 text-gray-600">
+                      <div className="w-12 h-12 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-gray-500" />
+                      </div>
+                      <p className="font-medium">No files uploaded yet</p>
+                      <p className="text-sm text-gray-500">Upload your first file to get started</p>
                     </div>
                   ) : (
                     <>
                                             {/* Show processing files first */}
                       {files.filter(f => f.status === 'processing').length > 0 && (
-                        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg shadow-sm">
                           <div className="flex items-center gap-2 text-green-700">
                             <RefreshCw className="w-4 h-4 animate-spin" />
                             <span className="font-medium">
@@ -453,7 +557,7 @@ export function DashboardView() {
                                              {files.map((file) => (
                       <div
                         key={file.uuid}
-                        className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                        className="border border-gray-300 rounded-lg p-4 bg-gray-100 hover:bg-gray-200 shadow-sm hover:shadow-md transition-all duration-200"
                       >
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center space-x-2">
@@ -548,9 +652,9 @@ export function DashboardView() {
         <TabsContent value="stats" className="space-y-4">
           {dashboardStats && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Processing Statistics</CardTitle>
+              <Card className="bg-white border-gray-200 shadow-sm">
+                <CardHeader className="bg-gray-50 border-b border-gray-200">
+                  <CardTitle className="text-gray-800">Processing Statistics</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
@@ -574,9 +678,9 @@ export function DashboardView() {
                 </CardContent>
               </Card>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Upload Methods</CardTitle>
+              <Card className="bg-white border-gray-200 shadow-sm">
+                <CardHeader className="bg-gray-50 border-b border-gray-200">
+                  <CardTitle className="text-gray-800">Upload Methods</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -597,15 +701,15 @@ export function DashboardView() {
 
                                                                                                                                                <TabsContent value="recent" className="space-y-4">
               {dashboardStats?.recent_events && (
-                <Card className="flex flex-col mb-8">
-                <CardHeader className="flex-shrink-0 pb-2">
-                  <CardTitle className="text-lg">Recent Events</CardTitle>
+                <Card className="flex flex-col mb-8 bg-white border-gray-200 shadow-sm">
+                <CardHeader className="flex-shrink-0 pb-2 bg-gray-50 border-b border-gray-200">
+                  <CardTitle className="text-lg text-gray-800">Recent Events</CardTitle>
                 </CardHeader>
                 <CardContent className="flex-1 min-h-0 p-0">
                   <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
                    <div className="space-y-2 p-6 pr-8">
                      {dashboardStats.recent_events.map((event, index) => (
-                       <div key={index} className="flex items-center space-x-3 p-2 rounded border">
+                       <div key={index} className="flex items-center space-x-3 p-2 rounded border border-gray-300 bg-gray-100 hover:bg-gray-200 shadow-sm transition-colors">
                          <div className="flex-1">
                            <div className="font-medium">{event.file_name}</div>
                            <div className="text-sm text-muted-foreground">{event.event_message}</div>

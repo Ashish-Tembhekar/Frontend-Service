@@ -80,6 +80,15 @@ export interface AskQuestionResponse {
   answer: string; // This is an HTML string
   sources: Source[];
   audio: AudioData | null;
+  // Fields from parallel transcribe-and-ask endpoint
+  original_text?: string;
+  translated_text?: string;
+  detected_language?: string;
+  final_language?: string;
+  original_question?: string;
+  english_question?: string;
+  conversation_history?: string;
+  processing_method?: string;
   // Developer mode fields (optional)
   debug_graph_context?: string;
   debug_filtered_docs?: Array<{
