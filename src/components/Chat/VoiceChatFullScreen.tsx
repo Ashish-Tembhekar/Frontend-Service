@@ -6,8 +6,9 @@ import { Button } from '../ui/button';
 import { X, Mic, MicOff, Volume2 } from 'lucide-react';
 import { useChat } from '../../contexts/ChatContext';
 import { useToast } from '../../hooks/use-toast';
-import { transcribeAudioAPI as transcribeAudio, transcribeAndAskAPI } from '../../services/apiClientNew';
+import { transcribeAudioAPI as transcribeAudio, transcribeAndAskAPI, transcribeAndAskStreamingAPI } from '../../services/apiClientNew';
 import { cn } from '../../lib/utils';
+import { useStreamingAudio } from '../../hooks/useStreamingAudio';
 
 // Lottie Animation Component
 const LottieAnimation = ({ 
@@ -90,6 +91,9 @@ interface VoiceChatFullScreenProps {
 export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProps) {
   const { sendMessage, addProcessedMessages, isLoadingResponse, messages, stopCurrentAudio } = useChat();
   const { toast } = useToast();
+
+  // Streaming audio hook
+  const streamingAudio = useStreamingAudio();
   
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -99,6 +103,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [isStreamingMode, setIsStreamingMode] = useState(true); // Enable streaming by default
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -190,6 +195,33 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       }
     }
   }, [isOpen]);
+
+  // Connect to streaming audio when component mounts and streaming is enabled
+  useEffect(() => {
+    if (isStreamingMode && isOpen) {
+      streamingAudio.connect();
+    }
+
+    return () => {
+      streamingAudio.disconnect();
+    };
+  }, [isStreamingMode, isOpen]); // Don't include streamingAudio functions to avoid infinite loops
+
+  // Handle streaming audio state changes
+  useEffect(() => {
+    if (isStreamingMode) {
+      // Update playing state based on streaming audio
+      if (streamingAudio.isPlaying && !isPlayingResponse) {
+        setIsPlayingResponse(true);
+      } else if (!streamingAudio.isPlaying && !streamingAudio.isStreaming && isPlayingResponse) {
+        // Audio finished playing
+        setIsPlayingResponse(false);
+        setCurrentAssistantText('');
+        setCurrentUserText('');
+        stopBargeInDetector();
+      }
+    }
+  }, [streamingAudio.isPlaying, streamingAudio.isStreaming, isPlayingResponse, isStreamingMode]);
 
   const handleAutoStartRecording = async () => {
     if (isLoadingResponse || isTranscribing || isPlayingResponse) return;
@@ -326,13 +358,27 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           }
         }
         
-        // Use parallel processing API - combines transcription and query processing
-        const response = await transcribeAndAskAPI(
-          audioBlob,
-          conversationHistoryString,
-          'auto', // Always use auto-detect for full-screen voice chat
-          true // needs audio for voice interaction
-        );
+        // Use streaming or traditional API based on setting
+        const response = isStreamingMode
+          ? await transcribeAndAskStreamingAPI(
+              audioBlob,
+              conversationHistoryString,
+              'auto', // Always use auto-detect for full-screen voice chat
+              (text: string, language: string) => {
+                // Callback for streaming audio
+                console.log('VoiceChatFullScreen - Starting streaming TTS for:', text.substring(0, 100) + '...');
+                streamingAudio.requestTTS(text, language);
+                setIsPlayingResponse(true);
+                setCurrentAssistantText(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+                startBargeInDetector();
+              }
+            )
+          : await transcribeAndAskAPI(
+              audioBlob,
+              conversationHistoryString,
+              'auto', // Always use auto-detect for full-screen voice chat
+              true // needs audio for voice interaction
+            );
         
         console.log('VoiceChatFullScreen - Parallel processing response:', response);
         
@@ -367,7 +413,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             content: response.answer,
             contentType: 'html' as const,
             timestamp: new Date().toISOString(),
-            audioData: response.audio,
+            audioData: isStreamingMode ? undefined : response.audio, // No audio data for streaming mode
           };
 
           // Use the new method to add pre-processed messages
@@ -564,13 +610,13 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     }
   };
 
-  // Handle playing response audio
+  // Handle playing response audio (only for traditional mode, not streaming)
   useEffect(() => {
-    if (currentUserText && !isTranscribing && !isLoadingResponse) {
+    if (!isStreamingMode && currentUserText && !isTranscribing && !isLoadingResponse) {
       // Get the latest assistant message
       const latestAssistantMessage = messages.filter(m => m.role === 'assistant').pop();
-      
-      if (latestAssistantMessage && latestAssistantMessage.audioData && 
+
+      if (latestAssistantMessage && latestAssistantMessage.audioData &&
           latestAssistantMessage.id !== processedMessageIdRef.current) {
         processedMessageIdRef.current = latestAssistantMessage.id;
         // Extract text content from HTML
@@ -635,14 +681,27 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           });
       }
     }
-  }, [currentUserText, isTranscribing, isLoadingResponse, messages, toast]);
+  }, [isStreamingMode, currentUserText, isTranscribing, isLoadingResponse, messages, toast]);
 
   const getStatusMessage = () => {
     if (isInitializing) return "Start speaking...";
     if (isRecording) return "Listening...";
     if (isTranscribing) return "Processing your message...";
     if (isLoadingResponse) return "Thinking...";
-    if (isPlayingResponse) return "Speaking...";
+    if (isPlayingResponse) {
+      if (isStreamingMode && streamingAudio.isStreaming) {
+        return `Speaking... (${streamingAudio.currentChunk}/${streamingAudio.totalChunks})`;
+      }
+      return "Speaking...";
+    }
+
+    // Show streaming connection status when idle
+    if (isStreamingMode) {
+      return streamingAudio.isConnected
+        ? "Tap the mic to start (Streaming Ready)"
+        : "Tap the mic to start (Connecting...)";
+    }
+
     return "Tap the mic to start";
   };
 
@@ -754,6 +813,21 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             ) : (
               <Mic className="h-6 w-6" />
             )}
+          </Button>
+
+          {/* Streaming mode toggle */}
+          <Button
+            onClick={() => setIsStreamingMode(!isStreamingMode)}
+            size="icon"
+            className={cn(
+              "h-12 w-12 rounded-full transition-all duration-200 shadow-lg",
+              isStreamingMode
+                ? "bg-blue-500 hover:bg-blue-600 text-white"
+                : "bg-gray-400 hover:bg-gray-500 text-white"
+            )}
+            title={isStreamingMode ? "Streaming Audio (Fast)" : "Traditional Audio (Slower)"}
+          >
+            <Volume2 className="h-4 w-4" />
           </Button>
 
           {/* Close button */}

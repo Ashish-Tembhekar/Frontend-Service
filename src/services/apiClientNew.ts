@@ -281,4 +281,84 @@ export async function transcribeAndAskAPI(
         }
         throw new Error("Failed to connect to the voice processing service. Please check the backend or try again.");
     }
-} 
+}
+
+/**
+ * Transcribe and ask with streaming TTS response.
+ * This version returns the text response immediately and uses WebSocket for streaming audio.
+ */
+export async function transcribeAndAskStreamingAPI(
+    audioBlob: Blob,
+    conversationHistory?: string,
+    selectedLanguage?: string,
+    onStreamingAudio?: (text: string, language: string) => void
+): Promise<AskQuestionResponse> {
+    console.log('apiClientNew - transcribeAndAskStreamingAPI called with blob size:', audioBlob.size);
+    console.log('apiClientNew - transcribeAndAskStreamingAPI conversationHistory:', conversationHistory);
+    console.log('apiClientNew - transcribeAndAskStreamingAPI selectedLanguage:', selectedLanguage);
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+
+    // Add conversation history if provided
+    if (conversationHistory && conversationHistory.trim() !== '') {
+        formData.append('conversation_history', conversationHistory);
+    }
+
+    // Add selected language if provided
+    if (selectedLanguage && selectedLanguage !== 'auto') {
+        formData.append('selected_language', selectedLanguage);
+    }
+
+    // Request text response without audio (we'll stream audio separately)
+    formData.append('needs_audio', 'false');
+
+    try {
+        console.log('apiClientNew - Making streaming transcribe-and-ask request to:', `${appConfig.fastApiBaseUrl}/transcribe-and-ask/`);
+
+        const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        console.log('apiClientNew - Streaming transcribe-and-ask response status:', response.status);
+        console.log('apiClientNew - Streaming transcribe-and-ask response ok:', response.ok);
+
+        if (!response.ok) {
+            const errorBody = await response.text();
+            console.error("Error from FastAPI backend during streaming transcribe-and-ask:", response.status, errorBody);
+            throw new Error(`Streaming transcribe-and-ask failed with status ${response.status}: ${errorBody}`);
+        }
+
+        const result: AskQuestionResponse = await response.json();
+        console.log('apiClientNew - Streaming transcribe-and-ask response data:', result);
+
+        // If we have a text response and a streaming callback, initiate streaming TTS
+        if (result.answer && onStreamingAudio) {
+            // Extract text content from HTML response
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = result.answer;
+            const textContent = tempDiv.textContent || tempDiv.innerText || '';
+
+            if (textContent.trim()) {
+                // Trigger streaming audio for the response
+                onStreamingAudio(textContent, result.detected_language || 'en');
+            }
+        }
+
+        return result;
+
+    } catch (error) {
+        console.error("Error calling streaming transcribe-and-ask endpoint:", error);
+        console.error("Error details:", {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : 'No stack trace',
+            name: error instanceof Error ? error.name : 'Unknown'
+        });
+
+        if (error instanceof Error && error.message.startsWith('Streaming transcribe-and-ask failed')) {
+            throw error;
+        }
+        throw new Error("Failed to connect to the streaming voice processing service. Please check the backend or try again.");
+    }
+}
