@@ -3,11 +3,12 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import type { Message, ChatThread, AudioData } from '../types/chat';
+import type { Message, ChatThread } from '../types/chat';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion } from '../services/apiClientNew';
 import { useToast } from '../hooks/use-toast';
 import { validateFileSize } from '../lib/utils';
+import { useStreamingAudio } from '../hooks/useStreamingAudio';
 
 interface ChatContextType {
   chatThreads: ChatThread[];
@@ -16,6 +17,9 @@ interface ChatContextType {
   messages: Message[];
   isLoadingResponse: boolean;
   isHistoryPanelOpen: boolean;
+  // + Add new state and toggle function
+  isAudioResponseEnabled: boolean;
+  toggleAudioResponse: () => void;
   sendMessage: (userInput: string, originalText?: string, isVoiceMessage?: boolean, detectedLang?: string) => Promise<void>;
   addProcessedMessages: (userMessage: Message, assistantMessage: Message) => void;
   uploadFile: (file: File) => Promise<void>;
@@ -49,14 +53,22 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoadingResponse, setIsLoadingResponse] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
-  const [currentAudioElement, setCurrentAudioElement] = useState<HTMLAudioElement | null>(null);
   const { toast } = useToast();
+  const streamingAudio = useStreamingAudio();
 
-  // Helper to add or update a message in the current thread for local storage
+  // + Add state for the audio response toggle, persisted in local storage
+  const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
+
+  useEffect(() => {
+    streamingAudio.connect();
+    return () => {
+      streamingAudio.disconnect();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const updateMessagesInCurrentThread = (newMessages: Message[], title?: string) => {
     if (!currentChatThreadId) return;
-
-    // Strip audioData before saving to localStorage to prevent exceeding quota
     const messagesForStorage = newMessages.map(({ audioData, ...message }) => message);
 
     setChatThreads(prevThreads => {
@@ -65,7 +77,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       const updatedThread = {
         ...prevThreads[threadIndex],
-        messages: messagesForStorage, // Use the sanitized messages
+        messages: messagesForStorage,
         lastUpdatedAt: new Date().toISOString(),
         ...(title && { title }),
       };
@@ -91,7 +103,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const currentIdIsValid = currentChatThreadId && chatThreads.some(t => t.id === currentChatThreadId);
 
     if (threadsExist && !currentIdIsValid) {
-      const mostRecentThread = [...chatThreads].sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime())[0];
+       const mostRecentThread = [...chatThreads].sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime())[0];
       setCurrentChatThreadId(mostRecentThread.id);
     } else if (!threadsExist && currentChatThreadId) {
       startNewChat();
@@ -106,7 +118,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (currentChatThreadId) {
       const thread = chatThreads.find(t => t.id === currentChatThreadId);
       setActiveChatThread(thread || null);
-      // When loading from storage, messages won't have audioData, which is correct.
       setMessages(thread?.messages || []);
     } else {
       setActiveChatThread(null);
@@ -117,10 +128,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const uploadFile = async (file: File) => {
     if (!currentChatThreadId) return;
 
-    // Validate file size before proceeding
     const validation = validateFileSize(file);
     if (!validation.isValid) {
-      console.log('File validation failed in ChatContext:', validation.errorMessage);
       toast({
         title: "File too large",
         description: validation.errorMessage,
@@ -170,49 +179,45 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
+  const stopCurrentAudio = useCallback(() => {
+    streamingAudio.stopAudio();
+  }, [streamingAudio]);
 
-  // Helper function to play audio
-  const playAudioResponse = (audioData: AudioData | null) => {
-    if (!audioData?.audio_base64) return;
-    
-    try {
-      const audio = new Audio(`data:${audioData.mime_type};base64,${audioData.audio_base64}`);
-      setCurrentAudioElement(audio);
-      audio.play().catch(error => {
-        console.error('Error playing audio:', error);
-        setCurrentAudioElement(null);
-      });
-    } catch (error) {
-      console.error('Error creating audio element:', error);
-      setCurrentAudioElement(null);
-    }
-  };
+  // + Add a function to toggle the audio response setting
+  const toggleAudioResponse = useCallback(() => {
+    setIsAudioResponseEnabled(prev => {
+      const newState = !prev;
+      // If turning audio off, stop any currently playing audio
+      if (!newState) {
+        stopCurrentAudio();
+      }
+      return newState;
+    });
+  }, [setIsAudioResponseEnabled, stopCurrentAudio]);
 
-  // Function to stop current audio
-  const stopCurrentAudio = () => {
-    if (currentAudioElement) {
-      currentAudioElement.pause();
-      currentAudioElement.currentTime = 0;
-      setCurrentAudioElement(null);
-    }
-  };
-
-  // Function to add pre-processed messages (for parallel voice processing)
   const addProcessedMessages = (userMessage: Message, assistantMessage: Message) => {
     if (!currentChatThreadId) return;
 
     const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
     const newTitle = isNewThread ? (userMessage.content.substring(0, 30) + (userMessage.content.length > 30 ? '...' : '')) : undefined;
 
+    const assistantMessageForState = { ...assistantMessage, audioData: null };
+
     setMessages(prevMessages => {
-      const updatedMessages = [...prevMessages, userMessage, assistantMessage];
+      const updatedMessages = [...prevMessages, userMessage, assistantMessageForState];
       updateMessagesInCurrentThread(updatedMessages, newTitle);
       return updatedMessages;
     });
 
-    // Auto-play audio if available
-    if (assistantMessage.audioData) {
-      playAudioResponse(assistantMessage.audioData);
+    // ~ UPDATED: Only request TTS if the audio toggle is enabled
+    if (isAudioResponseEnabled) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = assistantMessage.content;
+      const textContent = tempDiv.textContent || tempDiv.innerText || '';
+      if (textContent.trim()) {
+        const lang = (assistantMessage as any).detected_language || 'en';
+        streamingAudio.requestTTS(textContent, lang);
+      }
     }
   };
 
@@ -220,8 +225,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!userInput.trim() || !currentChatThreadId) return;
 
     setIsLoadingResponse(true);
+    stopCurrentAudio();
 
-    // Use original text for display in chat history, or fall back to userInput
     const displayText = originalText || userInput;
 
     const userMessage: Message = {
@@ -250,45 +255,22 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     try {
-      console.log('ChatContext - About to call askQuestion with:', userInput);
-      console.log('ChatContext - detectedLang:', detectedLang);
-      console.log('ChatContext - isVoiceMessage:', isVoiceMessage);
-      
-      // Prepare conversation history as a formatted string from the last 5 Q&A pairs
       let conversationHistoryString = '';
       const currentMessages = activeChatThread?.messages || [];
+      const recentMessages = currentMessages.filter(msg => msg.role !== 'system').slice(-10);
       
-      // Get the last 10 messages (5 Q&A pairs) excluding system messages
-      const recentMessages = currentMessages
-        .filter(msg => msg.role !== 'system')
-        .slice(-10);
-      
-      // Convert to conversation history string format
       for (let i = 0; i < recentMessages.length - 1; i += 2) {
         const userMsg = recentMessages[i];
         const assistantMsg = recentMessages[i + 1];
-        
         if (userMsg && assistantMsg && userMsg.role === 'user' && assistantMsg.role === 'assistant') {
           conversationHistoryString += `User: ${userMsg.content}\nAssistant: ${assistantMsg.content}\n\n`;
         }
       }
       
-      console.log('ChatContext - Conversation history string:', conversationHistoryString);
+      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, false);
       
-      // Pass conversation history as string and detected language
-      // For voice messages: use detectedLang if provided, otherwise undefined
-      // For text messages: use detectedLang if provided (user selected language), otherwise undefined
-      // Only generate audio for voice interactions (microphone or direct call)
-      const needsAudio = isVoiceMessage;
-      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, needsAudio);
-      console.log('ChatContext - askQuestion response:', response);
-      
-      if (!response) {
-        throw new Error('No response received from askQuestion');
-      }
-      
-      if (!response.answer) {
-        throw new Error('Response does not contain an answer property');
+      if (!response || !response.answer) {
+        throw new Error('No valid response received from the AI service.');
       }
       
       const finalAssistantMessage: Message = {
@@ -297,14 +279,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         contentType: 'html',
         isLoading: false,
         timestamp: new Date().toISOString(),
-        audioData: response.audio,
-        // Attach developer debug fields for UI if provided (independently)
-        ...(response.debug_graph_context !== undefined
-          ? { debug_graph_context: response.debug_graph_context } as any
-          : {}),
-        ...(response.debug_filtered_docs !== undefined
-          ? { debug_filtered_docs: response.debug_filtered_docs } as any
-          : {}),
+        audioData: null,
+        ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
+        ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
       };
       
       setMessages(prev => {
@@ -313,9 +290,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return finalMessages;
       });
 
-      // Auto-play audio only for voice messages and when audio is available
-      if (isVoiceMessage && response.audio) {
-        playAudioResponse(response.audio);
+      // ~ UPDATED: Check the toggle state before initiating TTS for any message type
+      if (isAudioResponseEnabled) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = response.answer;
+        const textContent = tempDiv.textContent || tempDiv.innerText || '';
+
+        if (textContent.trim()) {
+          streamingAudio.requestTTS(textContent, response.detected_language || 'en');
+        }
       }
 
     } catch (error) {
@@ -418,6 +401,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       messages,
       isLoadingResponse,
       isHistoryPanelOpen,
+      isAudioResponseEnabled, // + Expose new state
+      toggleAudioResponse,    // + Expose new function
       sendMessage,
       addProcessedMessages,
       uploadFile,
@@ -442,3 +427,4 @@ export const useChat = (): ChatContextType => {
   }
   return context;
 };
+

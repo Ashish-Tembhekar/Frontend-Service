@@ -70,7 +70,6 @@ export function MessageItem({ message }: MessageItemProps) {
               : 'bg-gray-100 text-gray-900'
           }`}
         >
-          {/* Render user messages with Markdown, but assistant messages directly as HTML without prose styling */ }
           {isUser ? (
             <MarkdownRenderer content={message.content} />
           ) : (
@@ -80,18 +79,8 @@ export function MessageItem({ message }: MessageItemProps) {
             />
           )}
 
-          {/* Audio player for assistant's voice responses */}
-          {!isUser && message.audioData && (
-            <div className="mt-3">
-              <audio 
-                controls 
-                src={`data:${message.audioData.mime_type};base64,${message.audioData.audio_base64}`}
-                className="w-full h-8 rounded-lg"
-              >
-                Your browser does not support the audio element.
-              </audio>
-            </div>
-          )}
+          {/* - REMOVED: The <audio> player is no longer needed. */}
+          {/* Playback is now handled ambiently by the useStreamingAudio hook. */}
 
           {/* Developer mode: collapsible debug details */}
           {!isUser && appConfig.developerMode && (() => {
@@ -99,7 +88,6 @@ export function MessageItem({ message }: MessageItemProps) {
             const debugDocs = (message as any).debug_filtered_docs as Array<{ content_preview: string; metadata: Record<string, any> }> | undefined;
             const hasAnyDebug = Boolean(debugGraph) || Array.isArray(debugDocs);
             if (!hasAnyDebug) return null;
-            // Local component state for expand/collapse
             const [devOpen, setDevOpen] = useState(false);
             const graphCount = useMemo(() => (debugGraph ? debugGraph.split('\n').filter(Boolean).length : 0), [debugGraph]);
             const docsCount = useMemo(() => (Array.isArray(debugDocs) ? debugDocs.length : 0), [debugDocs]);

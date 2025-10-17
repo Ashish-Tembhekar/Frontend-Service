@@ -3,7 +3,7 @@
 
 import React, { useState, useRef, type ChangeEvent, type KeyboardEvent, useEffect } from 'react';
 import { Button } from '../ui/button';
-import { Plus, Send, X, Mic, MicOff, Phone, Square, Globe } from 'lucide-react';
+import { Plus, Send, X, Mic, MicOff, Phone, Square, Globe, Volume2, VolumeX } from 'lucide-react'; // + Import Volume icons
 import { useChat } from '../../contexts/ChatContext';
 import { Textarea } from '../ui/textarea';
 import { useToast } from '../../hooks/use-toast';
@@ -17,11 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 
 
 export function ChatInputBar() {
-  // Fresh compilation to break cache
   const [inputValue, setInputValue] = useState('');
-  const { sendMessage, addProcessedMessages, uploadFile, isLoadingResponse, messages, stopCurrentAudio } = useChat();
+  // + Destructure the new state and toggle function from the context
+  const { sendMessage, addProcessedMessages, uploadFile, isLoadingResponse, messages, stopCurrentAudio, isAudioResponseEnabled, toggleAudioResponse } = useChat();
   
-  // Language options
   const languageOptions = [
     { value: 'auto', label: 'Auto-detect' },
     { value: 'en', label: 'English' },
@@ -54,47 +53,13 @@ export function ChatInputBar() {
 
   const { toast } = useToast();
 
-
-  
-  // Handle audio playback state when using microphone
   useEffect(() => {
-    if (expectingAudioResponse && !isLoadingResponse) {
-      // Get the latest assistant message
-      const latestAssistantMessage = messages.filter(m => m.role === 'assistant').pop();
-      
-      if (latestAssistantMessage && latestAssistantMessage.audioData && 
-          latestAssistantMessage.id !== processedMessageIdRef.current) {
-        processedMessageIdRef.current = latestAssistantMessage.id;
-        
-        // Set audio playing state to true (audio is played by ChatContext)
-        setIsAudioPlaying(true);
-        
-        // Create audio element to track when it ends
-        const audioUrl = `data:${latestAssistantMessage.audioData.mime_type};base64,${latestAssistantMessage.audioData.audio_base64}`;
-        const audio = new Audio(audioUrl);
-        audioPlayerRef.current = audio;
-        
-        audio.onended = () => {
-          setExpectingAudioResponse(false);
-          setIsAudioPlaying(false);
-          audioPlayerRef.current = null;
-        };
-        
-        audio.onerror = () => {
-          setExpectingAudioResponse(false);
-          setIsAudioPlaying(false);
-          audioPlayerRef.current = null;
-          toast({
-            title: "Audio Playback Error",
-            description: "Could not play the audio response.",
-            variant: "destructive"
-          });
-        };
-      }
-    }
+    // This effect is now simplified as the context handles audio playback initiation
+    // We just need to know if audio is playing to update the UI
+    // The `useStreamingAudio` hook manages the actual playback state.
+    // This can be further simplified or removed if the UI state is managed by the hook.
   }, [messages, expectingAudioResponse, isLoadingResponse, toast]);
   
-  // Cleanup audio on unmount
   useEffect(() => {
     return () => {
       if (audioPlayerRef.current) {
@@ -106,22 +71,11 @@ export function ChatInputBar() {
   }, []);
   
   const handleMicClick = async () => {
-    console.log('ChatInputBar - handleMicClick called, isAudioPlaying:', isAudioPlaying, 'audioPlayerRef.current:', !!audioPlayerRef.current);
-    
     if (isLoadingResponse || isTranscribing) return;
 
-    // If audio is playing, stop it
-    if (isAudioPlaying || audioPlayerRef.current) {
-      console.log('ChatInputBar - Audio is playing, stopping it');
-      stopCurrentAudio(); // Stop the audio from ChatContext
-      if (audioPlayerRef.current) {
-        (audioPlayerRef.current as HTMLAudioElement).pause();
-        (audioPlayerRef.current as HTMLAudioElement).currentTime = 0;
-        audioPlayerRef.current = null;
-      }
+    if (isAudioPlaying) {
+      stopCurrentAudio();
       setIsAudioPlaying(false);
-      setExpectingAudioResponse(false);
-      console.log('ChatInputBar - Audio stopped');
       return;
     }
 
@@ -129,14 +83,8 @@ export function ChatInputBar() {
       stopRecording();
       return;
     }
-
-    // Stop any currently playing audio
-    if (audioPlayerRef.current) {
-      (audioPlayerRef.current as HTMLAudioElement).pause();
-      audioPlayerRef.current = null;
-      setExpectingAudioResponse(false);
-      setIsAudioPlaying(false);
-    }
+    
+    stopCurrentAudio();
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -163,23 +111,12 @@ export function ChatInputBar() {
 
     mediaRecorderRef.current.onstop = async () => {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      console.log('ChatInputBar - Audio blob created:', {
-        size: audioBlob.size,
-        type: audioBlob.type,
-        chunks: audioChunksRef.current.length
-      });
-      
-      // Stop the tracks to turn off the mic icon in the browser tab
       stream.getTracks().forEach(track => track.stop());
       
       setIsTranscribing(true);
       setInputValue("Processing voice message...");
-      setExpectingAudioResponse(true);
 
       try {
-        console.log('ChatInputBar - Using parallel transcribe-and-ask processing');
-        
-        // Prepare conversation history
         const currentMessages = messages.filter(m => m.role !== 'system').slice(-10);
         let conversationHistoryString = '';
         for (let i = 0; i < currentMessages.length - 1; i += 2) {
@@ -190,25 +127,21 @@ export function ChatInputBar() {
           }
         }
         
-        // Use parallel processing API - combines transcription and query processing
+        // This remains the same, as `addProcessedMessages` will handle the audio toggle
         const response = await transcribeAndAskAPI(
           audioBlob,
           conversationHistoryString,
           selectedLanguage,
-          true // needs audio for voice interaction
+          true
         );
         
-        console.log('ChatInputBar - Parallel processing response:', response);
-        
         if (response.original_text && response.original_text.trim()) {
-          // Show original language text in input bar briefly
           setInputValue(response.original_text);
           
-          // Add the messages to chat context directly since we have the full response
           const userMessage = {
             id: `msg_user_${Date.now()}`,
             role: 'user' as const,
-            content: response.original_text, // Display original text
+            content: response.original_text,
             contentType: 'text' as const,
             timestamp: new Date().toISOString(),
           };
@@ -219,14 +152,13 @@ export function ChatInputBar() {
             content: response.answer,
             contentType: 'html' as const,
             timestamp: new Date().toISOString(),
-            audioData: response.audio,
+            audioData: null, // No longer passing audio data here
           };
 
-          // Use the new method to add pre-processed messages
           addProcessedMessages(userMessage, assistantMessage);
           
           setTimeout(() => {
-            setInputValue(''); // Clear input after showing transcription
+            setInputValue('');
           }, 1000);
           
         } else {
@@ -235,16 +167,13 @@ export function ChatInputBar() {
             description: "Couldn't detect any speech in the audio.", 
             variant: "destructive" 
           });
-          setExpectingAudioResponse(false);
         }
       } catch (error) {
-        console.error('ChatInputBar - Error in parallel processing:', error);
         toast({ 
           title: "Voice Processing Failed", 
           description: "Could not process the voice message. Please try again.", 
           variant: "destructive" 
         });
-        setExpectingAudioResponse(false);
       } finally {
         setIsTranscribing(false);
         mediaRecorderRef.current = null;
@@ -260,12 +189,10 @@ export function ChatInputBar() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
-    // Note: Don't reset expectingAudioResponse here, as the recording might still be processed
   };
 
   const handleInputChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     setInputValue(event.target.value);
-    // Auto-resize textarea
     event.target.style.height = 'auto';
     event.target.style.height = `${Math.min(event.target.scrollHeight, 100)}px`;
   };
@@ -275,25 +202,15 @@ export function ChatInputBar() {
     if (!files || files.length === 0) return;
     
     const file = files[0];
-    console.log('File selected:', file.name, 'Size:', file.size, 'Type:', file.type);
-    
-    // Validate file size using utility function
     const validation = validateFileSize(file);
     if (!validation.isValid) {
-      console.log('File validation failed:', validation.errorMessage);
-      
-      // Clear file input first
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
       event.target.value = "";
-      
-      // Force a re-render by updating state
       setInputValue(prev => prev);
-      
-      // Show toast with rate limiting to prevent spam
       const now = Date.now();
-      if (now - lastToastTime > 1000) { // Only show toast if 1 second has passed
+      if (now - lastToastTime > 1000) {
         setLastToastTime(now);
         toast({
           title: "File too large",
@@ -301,22 +218,18 @@ export function ChatInputBar() {
           variant: "destructive",
         });
       }
-      
       return;
     }
     
-    // File is valid, proceed with upload
     try {
       await uploadFile(file);
     } catch (error) {
-      console.error('Upload failed:', error);
       toast({
         title: "Upload failed",
         description: "Failed to upload file. Please try again.",
         variant: "destructive",
       });
     } finally {
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -331,18 +244,10 @@ export function ChatInputBar() {
       stopRecording();
     }
     
-    // Stop any currently playing audio
-    const currentAudio = audioPlayerRef.current;
-    if (currentAudio) {
-      currentAudio.pause();
-      audioPlayerRef.current = null;
-      setExpectingAudioResponse(false);
-      setIsAudioPlaying(false);
-    }
+    stopCurrentAudio();
     
-    // For text input: send selected language if not auto, otherwise send undefined
     const languageToUse = selectedLanguage === 'auto' ? undefined : selectedLanguage;
-    await sendMessage(inputValue, undefined, false, languageToUse); // Regular text input
+    await sendMessage(inputValue, undefined, false, languageToUse);
     setInputValue('');
     
     const textarea = document.querySelector('textarea'); 
@@ -372,9 +277,7 @@ export function ChatInputBar() {
       )}
 
       <div className="max-w-4xl mx-auto">
-        {/* Clean input container */}
         <div className="relative flex items-end gap-3 p-3 bg-gray-100 rounded-2xl border border-gray-300 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300 hover:shadow-sm focus-within:shadow-md transition-all duration-300">
-          {/* Textarea */}
           <div className="flex-1 min-h-[44px] flex items-center">
             <Textarea
               value={inputValue}
@@ -387,9 +290,7 @@ export function ChatInputBar() {
             />
           </div>
 
-          {/* Action buttons */}
           <div className="flex items-center gap-2">
-            {/* File upload */}
             <Button 
               variant="ghost" 
               size="icon" 
@@ -401,7 +302,6 @@ export function ChatInputBar() {
               <Plus className="h-4 w-4" />
             </Button>
 
-            {/* Language selector - compact */}
             <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
               <SelectTrigger className="w-[120px] h-9 text-sm border-gray-200">
                 <Globe className="h-3 w-3 mr-1" />
@@ -416,25 +316,46 @@ export function ChatInputBar() {
               </SelectContent>
             </Select>
 
-            {/* Voice controls */}
+            {/* + ADDED: Audio Response Toggle Button */}
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={toggleAudioResponse}
+                    size="icon"
+                    variant="ghost"
+                    className={cn(
+                      "h-9 w-9 rounded-full transition-all duration-200",
+                      isAudioResponseEnabled
+                        ? "bg-blue-100 text-blue-600 hover:bg-blue-200"
+                        : "text-gray-500 hover:bg-gray-200"
+                    )}
+                    aria-label={isAudioResponseEnabled ? "Disable audio responses" : "Enable audio responses"}
+                  >
+                    {isAudioResponseEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isAudioResponseEnabled ? "Disable Audio Responses" : "Enable Audio Responses"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             <Button 
               onClick={handleMicClick}
-              disabled={isMicDisabled && !isAudioPlaying}
+              disabled={isMicDisabled}
               size="icon" 
               className={cn(
                 "h-9 w-9 rounded-full transition-all duration-200",
                 isRecording
                   ? "bg-red-100 text-red-600 animate-pulse"
-                  : isAudioPlaying
-                    ? "bg-red-100 text-red-600 hover:bg-red-200"
-                    : "bg-gray-600 text-white hover:bg-white hover:text-gray-600"
+                  : "bg-gray-600 text-white hover:bg-white hover:text-gray-600"
               )}
-              aria-label={isAudioPlaying ? "Stop speaking" : (isRecording ? "Stop recording" : "Start recording")}
+              aria-label={isRecording ? "Stop recording" : "Start recording"}
             >
-              {isAudioPlaying ? <Square className="h-4 w-4" /> : (isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />)}
+              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </Button>
 
-            {/* Voice chat */}
             <Button 
               onClick={() => setIsVoiceChatOpen(true)}
               disabled={isLoadingResponse || isRecording || isTranscribing}
@@ -445,7 +366,6 @@ export function ChatInputBar() {
               <Phone className="h-4 w-4" />
             </Button>
 
-            {/* Send button */}
             <Button 
               onClick={handleSubmit} 
               disabled={isLoadingResponse || !inputValue.trim() || isRecording || isTranscribing} 
@@ -458,7 +378,6 @@ export function ChatInputBar() {
           </div>
         </div>
 
-        {/* Footer text */}
         <div className="mt-2 text-center">
           <p className="text-xs text-gray-500">
             Technical Manual Assistant may produce inaccurate information. <span className="text-gray-600 hover:underline cursor-pointer">Privacy Notice</span>
