@@ -26,7 +26,7 @@ export default function PopupLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full"> {/* Ensure html takes full height of iframe */}
+    <html lang="en" className="h-full" suppressHydrationWarning> {/* Ensure html takes full height of iframe */}
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col h-full`}> {/* body also takes full height */}
         <ChatProvider>
           {children}

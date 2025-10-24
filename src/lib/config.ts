@@ -9,7 +9,7 @@ export const appConfig = {
   fastApiBaseUrl: process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000",
   
   // + ADDED: Direct URL for the Chatterbox/Lightning AI streaming TTS service
-  chatterboxTtsUrl: process.env.NEXT_PUBLIC_CHATTERBOX_TTS_URL || "",
+  chatterboxTtsUrl: process.env.NEXT_PUBLIC_CHATTERBOX_TTS_URL || "https://7860-01k6maprxpehcykhskfne1wyer.cloudspaces.litng.ai",
 
   // Developer mode toggle (mirrors backend DEVELOPER_MODE)
   developerMode: (process.env.NEXT_PUBLIC_DEVELOPER_MODE || "false").toLowerCase() === "true",

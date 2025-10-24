@@ -21,30 +21,41 @@ interface StreamingAudioState {
   currentChunk: number;
   totalChunks: number;
   error: string | null;
+  isLoading: boolean; // Loading icon state (request sent, waiting for first chunk)
+  progressPercent: number; // Progress bar percentage (0-100)
+}
+
+interface TTSParameters {
+  exaggeration?: number;
+  cfg_weight?: number;
+  reference_audio_file?: string | null;
 }
 
 export function useStreamingAudio() {
   const wsRef = useRef<WebSocket | null>(null);
-  const audioQueueRef = useRef<HTMLAudioElement[]>([]);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackQueueRef = useRef<ChatterboxAudioChunk[]>([]);
   const isPlayingRef = useRef(false);
   const isConnectingRef = useRef(false);
-  
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const [state, setState] = useState<StreamingAudioState>({
     isConnected: false,
     isStreaming: false,
     isPlaying: false,
     currentChunk: 0,
     totalChunks: 0,
-    error: null
+    error: null,
+    isLoading: false,
+    progressPercent: 0
   });
 
   const playNextChunk = useCallback(() => {
     if (playbackQueueRef.current.length === 0) {
       // End of queue
       isPlayingRef.current = false;
-      setState(prev => ({ ...prev, isPlaying: false, isStreaming: false, currentChunk: prev.totalChunks }));
+      setState(prev => ({ ...prev, isPlaying: false, isStreaming: false, currentChunk: prev.totalChunks, progressPercent: 100, isLoading: false }));
       return;
     }
 
@@ -56,29 +67,36 @@ export function useStreamingAudio() {
       const audio = new Audio(audioUrl);
       currentAudioRef.current = audio;
 
+      // Calculate progress percentage
+      const progressPercent = state.totalChunks > 0
+        ? Math.round((chunk.chunk_index / state.totalChunks) * 100)
+        : 0;
+
       audio.onended = () => {
         currentAudioRef.current = null;
+        // Update progress as chunks finish playing
+        setState(prev => ({ ...prev, progressPercent }));
         // Use a small timeout to prevent race conditions between chunks
-        setTimeout(playNextChunk, 240); 
+        setTimeout(playNextChunk, 240);
       };
 
       audio.onerror = (error) => {
         console.error('🎵 Audio playback error:', error);
         currentAudioRef.current = null;
-        setState(prev => ({ ...prev, isPlaying: false, error: 'Audio playback error' }));
+        setState(prev => ({ ...prev, isPlaying: false, error: 'Audio playback error', isLoading: false }));
       };
 
       audio.play().catch(error => {
         console.error('🎵 Error starting audio playback:', error);
         currentAudioRef.current = null;
-        setState(prev => ({ ...prev, isPlaying: false, error: 'Failed to start audio playback' }));
+        setState(prev => ({ ...prev, isPlaying: false, error: 'Failed to start audio playback', isLoading: false }));
       });
 
     } catch (error) {
       console.error('🎵 Error creating audio element:', error);
-      setState(prev => ({ ...prev, error: 'Failed to create audio element' }));
+      setState(prev => ({ ...prev, error: 'Failed to create audio element', isLoading: false }));
     }
-  }, []);
+  }, [state.totalChunks]);
 
   const handleWebSocketMessage = useCallback((message: any) => {
     switch (message.type) {
@@ -97,9 +115,10 @@ export function useStreamingAudio() {
           mime_type: 'audio/wav', // Chatterbox sends wav
           language: message.language,
         };
-        
+
         playbackQueueRef.current.push(chunkData);
-        setState(prev => ({ ...prev, isStreaming: true, currentChunk: message.chunk_index + 1 }));
+        // Hide loading icon once first chunk arrives, show progress bar
+        setState(prev => ({ ...prev, isStreaming: true, currentChunk: message.chunk_index + 1, isLoading: false }));
 
         if (!isPlayingRef.current) {
           isPlayingRef.current = true;
@@ -110,7 +129,7 @@ export function useStreamingAudio() {
 
       case 'error':
         console.error('🎵 TTS service error:', message.error);
-        setState(prev => ({ ...prev, error: message.error, isStreaming: false, isPlaying: false }));
+        setState(prev => ({ ...prev, error: message.error, isStreaming: false, isPlaying: false, isLoading: false }));
         break;
 
       default:
@@ -135,8 +154,20 @@ export function useStreamingAudio() {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
+      // Set a timeout to detect if connection doesn't open within 10 seconds
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (ws.readyState === WebSocket.CONNECTING) {
+          console.warn('🎵 WebSocket connection timeout, closing...');
+          ws.close();
+        }
+      }, 10000);
+
       ws.onopen = () => {
         console.log('🎵 Streaming TTS WebSocket connected directly to Chatterbox');
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         isConnectingRef.current = false;
         setState(prev => ({ ...prev, isConnected: true }));
       };
@@ -152,20 +183,34 @@ export function useStreamingAudio() {
 
       ws.onclose = () => {
         console.log('🎵 Streaming TTS WebSocket disconnected');
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         isConnectingRef.current = false;
-        setState(prev => ({ ...prev, isConnected: false, isStreaming: false, isPlaying: false }));
+        setState(prev => ({ ...prev, isConnected: false, isStreaming: false, isPlaying: false, isLoading: false }));
+
+        // Attempt to reconnect after 3 seconds
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log('🎵 Attempting to reconnect TTS WebSocket...');
+          connect();
+        }, 3000);
       };
 
       ws.onerror = (error) => {
         console.error('🎵 Streaming TTS WebSocket error:', error);
+        if (connectionTimeoutRef.current) {
+          clearTimeout(connectionTimeoutRef.current);
+          connectionTimeoutRef.current = null;
+        }
         isConnectingRef.current = false;
-        setState(prev => ({ ...prev, error: 'WebSocket connection error' }));
+        setState(prev => ({ ...prev, error: 'WebSocket connection error', isLoading: false }));
       };
 
     } catch (error) {
       console.error('Error creating WebSocket connection:', error);
       isConnectingRef.current = false;
-      setState(prev => ({ ...prev, error: 'Failed to create WebSocket connection' }));
+      setState(prev => ({ ...prev, error: 'Failed to create WebSocket connection', isLoading: false }));
     }
   }, [handleWebSocketMessage]);
 
@@ -180,9 +225,9 @@ export function useStreamingAudio() {
     setState(prev => ({ ...prev, isPlaying: false, isStreaming: false }));
   }, []);
 
-  const requestTTS = useCallback((text: string, language: string = 'en') => {
+  const requestTTS = useCallback((text: string, language: string = 'en', ttsParams?: TTSParameters) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      setState(prev => ({ ...prev, error: 'TTS service not connected' }));
+      setState(prev => ({ ...prev, error: 'TTS service not connected', isLoading: false }));
       // Attempt to reconnect if not connected
       connect();
       return;
@@ -191,19 +236,25 @@ export function useStreamingAudio() {
     stopAudio();
     playbackQueueRef.current = [];
 
+    // Show loading icon immediately when request is sent
     setState(prev => ({
       ...prev,
       isStreaming: true,
       isPlaying: false,
       currentChunk: 0,
       totalChunks: 0,
-      error: null
+      error: null,
+      isLoading: true,
+      progressPercent: 0
     }));
 
-    // + UPDATED: Send the request in the format Chatterbox expects
+    // + UPDATED: Send the request with TTS parameters
     const request = {
       text,
-      language
+      language,
+      exaggeration: ttsParams?.exaggeration ?? 0.5,
+      cfg_weight: ttsParams?.cfg_weight ?? 0.5,
+      reference_audio_file: ttsParams?.reference_audio_file ?? null
     };
 
     wsRef.current.send(JSON.stringify(request));
@@ -215,6 +266,14 @@ export function useStreamingAudio() {
       wsRef.current.close();
       wsRef.current = null;
     }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
     isConnectingRef.current = false;
     setState({
       isConnected: false,
@@ -222,7 +281,9 @@ export function useStreamingAudio() {
       isPlaying: false,
       currentChunk: 0,
       totalChunks: 0,
-      error: null
+      error: null,
+      isLoading: false,
+      progressPercent: 0
     });
   }, [stopAudio]);
 

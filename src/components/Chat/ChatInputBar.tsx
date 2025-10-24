@@ -390,7 +390,7 @@ export function ChatInputBar() {
         ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
-        accept=".pdf" 
+        accept=".pdf,.docx,.txt,.md" 
       />
       <VoiceChatFullScreen 
         isOpen={isVoiceChatOpen} 

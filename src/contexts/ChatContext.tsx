@@ -20,6 +20,21 @@ interface ChatContextType {
   // + Add new state and toggle function
   isAudioResponseEnabled: boolean;
   toggleAudioResponse: () => void;
+  // + Add TTS parameters
+  ttsExaggeration: number;
+  setTtsExaggeration: (value: number) => void;
+  ttsCfgWeight: number;
+  setTtsCfgWeight: (value: number) => void;
+  ttsRefAudioFile: string | null;
+  setTtsRefAudioFile: (filename: string | null) => void;
+  // + Add TTS status properties
+  ttsIsLoading: boolean;
+  ttsIsStreaming: boolean;
+  ttsIsPlaying: boolean;
+  ttsProgressPercent: number;
+  ttsCurrentChunk: number;
+  ttsTotalChunks: number;
+  ttsError: string | null;
   sendMessage: (userInput: string, originalText?: string, isVoiceMessage?: boolean, detectedLang?: string) => Promise<void>;
   addProcessedMessages: (userMessage: Message, assistantMessage: Message) => void;
   uploadFile: (file: File) => Promise<void>;
@@ -58,6 +73,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // + Add state for the audio response toggle, persisted in local storage
   const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
+
+  // + Add TTS parameters, persisted in local storage
+  const [ttsExaggeration, setTtsExaggeration] = useLocalStorage('nexus_tts_exaggeration_v1', 0.5);
+  const [ttsCfgWeight, setTtsCfgWeight] = useLocalStorage('nexus_tts_cfg_weight_v1', 0.5);
+  const [ttsRefAudioFile, setTtsRefAudioFile] = useLocalStorage<string | null>('nexus_tts_ref_audio_file_v1', null);
 
   useEffect(() => {
     streamingAudio.connect();
@@ -216,7 +236,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const textContent = tempDiv.textContent || tempDiv.innerText || '';
       if (textContent.trim()) {
         const lang = (assistantMessage as any).detected_language || 'en';
-        streamingAudio.requestTTS(textContent, lang);
+        streamingAudio.requestTTS(textContent, lang, {
+          exaggeration: ttsExaggeration,
+          cfg_weight: ttsCfgWeight,
+          reference_audio_file: ttsRefAudioFile
+        });
       }
     }
   };
@@ -297,7 +321,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const textContent = tempDiv.textContent || tempDiv.innerText || '';
 
         if (textContent.trim()) {
-          streamingAudio.requestTTS(textContent, response.detected_language || 'en');
+          streamingAudio.requestTTS(textContent, response.detected_language || 'en', {
+            exaggeration: ttsExaggeration,
+            cfg_weight: ttsCfgWeight,
+            reference_audio_file: ttsRefAudioFile
+          });
         }
       }
 
@@ -403,6 +431,20 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isHistoryPanelOpen,
       isAudioResponseEnabled, // + Expose new state
       toggleAudioResponse,    // + Expose new function
+      ttsExaggeration,        // + Expose TTS parameters
+      setTtsExaggeration,
+      ttsCfgWeight,
+      setTtsCfgWeight,
+      ttsRefAudioFile,
+      setTtsRefAudioFile,
+      // + Expose TTS status
+      ttsIsLoading: streamingAudio.isLoading,
+      ttsIsStreaming: streamingAudio.isStreaming,
+      ttsIsPlaying: streamingAudio.isPlaying,
+      ttsProgressPercent: streamingAudio.progressPercent,
+      ttsCurrentChunk: streamingAudio.currentChunk,
+      ttsTotalChunks: streamingAudio.totalChunks,
+      ttsError: streamingAudio.error,
       sendMessage,
       addProcessedMessages,
       uploadFile,
