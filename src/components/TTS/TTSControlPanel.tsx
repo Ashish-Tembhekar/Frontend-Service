@@ -32,6 +32,7 @@ export function TTSControlPanel({
   const [refAudioFiles, setRefAudioFiles] = useState<RefAudioFile[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isCachingAudio, setIsCachingAudio] = useState(false);
 
   // Fetch available reference audio files
   useEffect(() => {
@@ -55,7 +56,33 @@ export function TTSControlPanel({
     };
 
     fetchRefAudioFiles();
-  }, []);
+  }, [appConfig.chatterboxTtsUrl]);
+
+  // Cache reference audio when selected
+  const handleRefAudioChange = async (filename: string | null) => {
+    onRefAudioChange(filename);
+
+    if (filename && filename !== 'none') {
+      // Cache the selected audio on the server
+      setIsCachingAudio(true);
+      try {
+        const ttsServiceUrl = appConfig.chatterboxTtsUrl || 'http://localhost:8000';
+        const response = await fetch(`${ttsServiceUrl}/cache-reference-audio?filename=${encodeURIComponent(filename)}`, {
+          method: 'POST',
+        });
+        if (!response.ok) {
+          console.warn('Failed to cache reference audio on server');
+        } else {
+          const data = await response.json();
+          console.log('✅ Reference audio cached on server:', data.message);
+        }
+      } catch (err) {
+        console.error('Error caching reference audio:', err);
+      } finally {
+        setIsCachingAudio(false);
+      }
+    }
+  };
 
   return (
     <Card className="w-full bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
@@ -124,16 +151,17 @@ export function TTSControlPanel({
             </label>
           </div>
           <Select
+            key={`select-${refAudioFiles.length}`}
             value={selectedRefAudio || 'none'}
-            onValueChange={(value) => onRefAudioChange(value === 'none' ? null : value)}
-            disabled={isLoadingFiles}
+            onValueChange={(value) => handleRefAudioChange(value === 'none' ? null : value)}
+            disabled={isLoadingFiles || isCachingAudio}
           >
             <SelectTrigger className="w-full bg-white border-gray-300">
               <SelectValue placeholder={isLoadingFiles ? 'Loading files...' : 'Select reference audio'} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">None (Standard TTS)</SelectItem>
-              {refAudioFiles.map((file) => (
+              {refAudioFiles && refAudioFiles.length > 0 && refAudioFiles.map((file) => (
                 <SelectItem key={file.name} value={file.name}>
                   {file.name}
                 </SelectItem>
