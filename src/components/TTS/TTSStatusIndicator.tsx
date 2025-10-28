@@ -28,7 +28,7 @@ export function TTSStatusIndicator({
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 rounded-lg">
+    <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-sm">
       {/* Loading Icon - Shows when request is sent but no chunks yet */}
       {isLoading && (
         <div className="flex items-center gap-2 flex-1">

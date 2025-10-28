@@ -2,17 +2,31 @@
 import type { Message } from '../../types/chat';
 import { appConfig } from '../../lib/config';
 import React, { useMemo, useState } from 'react';
-import { Bot, Loader2, User } from 'lucide-react'; 
+import { Bot, Loader2, User } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { TTSStatusIndicator } from '../TTS/TTSStatusIndicator';
+import { useChat } from '../../contexts/ChatContext';
 
 interface MessageItemProps {
   message: Message;
+  isLastAssistantMessage?: boolean;
 }
 
-export function MessageItem({ message }: MessageItemProps) {
+export function MessageItem({ message, isLastAssistantMessage = false }: MessageItemProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
+
+  // Get TTS status from context
+  const {
+    ttsIsLoading,
+    ttsIsStreaming,
+    ttsIsPlaying,
+    ttsProgressPercent,
+    ttsCurrentChunk,
+    ttsTotalChunks,
+    ttsError
+  } = useChat();
 
   if (isSystem) {
     return (
@@ -62,20 +76,20 @@ export function MessageItem({ message }: MessageItemProps) {
         </div>
       )}
       
-      <div className={`flex flex-col max-w-[80%] ${isUser ? 'items-end' : 'items-start'}`}>
+      <div className={`flex flex-col max-w-[80%] ${isUser ? 'items-end' : 'items-start'} w-full`}>
         <div
-          className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 ${
-            isUser 
-              ? 'bg-gray-700 text-white' 
+          className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 w-full ${
+            isUser
+              ? 'bg-gray-700 text-white'
               : 'bg-gray-100 text-gray-900'
           }`}
         >
           {isUser ? (
             <MarkdownRenderer content={message.content} />
           ) : (
-            <div 
+            <div
               className="max-w-none break-words prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: message.content }} 
+              dangerouslySetInnerHTML={{ __html: message.content }}
             />
           )}
 
@@ -134,8 +148,23 @@ export function MessageItem({ message }: MessageItemProps) {
             );
           })()}
         </div>
+
+        {/* TTS Status Indicator - Shows under assistant message bubble */}
+        {!isUser && isLastAssistantMessage && (
+          <div className="w-full mt-2">
+            <TTSStatusIndicator
+              isLoading={ttsIsLoading}
+              isStreaming={ttsIsStreaming}
+              isPlaying={ttsIsPlaying}
+              progressPercent={ttsProgressPercent}
+              currentChunk={ttsCurrentChunk}
+              totalChunks={ttsTotalChunks}
+              error={ttsError}
+            />
+          </div>
+        )}
       </div>
-      
+
       {isUser && (
         <div className="flex-shrink-0">
           <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">

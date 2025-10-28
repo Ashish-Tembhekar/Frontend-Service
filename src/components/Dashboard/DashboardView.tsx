@@ -7,14 +7,14 @@ import { Badge } from '../ui/badge';
 import { Progress } from '../ui/progress';
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { 
-  FileText, 
-  Upload, 
-  Trash2, 
-  RefreshCw, 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
+import {
+  FileText,
+  Upload,
+  Trash2,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Clock,
   BarChart3,
   Image,
   Table,
@@ -32,6 +32,8 @@ import { validateFileSize, formatFileSize } from '../../lib/utils';
 import { appConfig } from '../../lib/config';
 import Link from 'next/link';
 import { ChunksModal } from './ChunksModal';
+import { TTSControlPanel } from '../TTS/TTSControlPanel';
+import { useChat } from '../../contexts/ChatContext';
 
 // Types for the dashboard
 interface FileStats {
@@ -98,6 +100,16 @@ export function DashboardView() {
   const [uploadConfig, setUploadConfig] = useState<UploadConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Get TTS settings from ChatContext
+  const {
+    ttsExaggeration,
+    setTtsExaggeration,
+    ttsCfgWeight,
+    setTtsCfgWeight,
+    ttsRefAudioFile,
+    setTtsRefAudioFile,
+  } = useChat();
   const [selectedFile, setSelectedFile] = useState<FileStats | null>(null);
   const [isChunksModalOpen, setIsChunksModalOpen] = useState(false);
   const [selectedFileForChunks, setSelectedFileForChunks] = useState<FileStats | null>(null);
@@ -726,6 +738,24 @@ export function DashboardView() {
            )}
          </TabsContent>
       </Tabs>
+
+      {/* TTS Control Panel */}
+      <Card className="bg-white border-gray-200 shadow-sm">
+        <CardHeader className="bg-gray-50 border-b border-gray-200">
+          <CardTitle className="text-gray-800">Voice Synthesis Settings</CardTitle>
+          <CardDescription>Configure text-to-speech parameters for chatbot responses</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <TTSControlPanel
+            exaggeration={ttsExaggeration}
+            cfgWeight={ttsCfgWeight}
+            selectedRefAudio={ttsRefAudioFile}
+            onExaggerationChange={setTtsExaggeration}
+            onCfgWeightChange={setTtsCfgWeight}
+            onRefAudioChange={setTtsRefAudioFile}
+          />
+        </CardContent>
+      </Card>
 
       {/* File Details Modal */}
       {selectedFile && (

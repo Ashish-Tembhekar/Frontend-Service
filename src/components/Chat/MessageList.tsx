@@ -36,11 +36,21 @@ export function MessageList({ messages }: MessageListProps) {
   // This outer div is the content that scrolls within the ScrollArea.
   // pb-56 ensures space for the fixed ChatInputBar.
   // pt-4 provides some top padding for the first message.
+
+  // Find the index of the last assistant message
+  const lastAssistantMessageIndex = messages.map((msg, idx) => ({ msg, idx }))
+    .reverse()
+    .find(({ msg }) => msg.role === 'assistant')?.idx ?? -1;
+
   return (
     <div className="w-full max-w-2xl sm:max-w-3xl md:max-w-4xl mx-auto px-4 pt-4 pb-20">
       <div className="space-y-2">
-        {messages.map((msg) => (
-          <MessageItem key={msg.id} message={msg} />
+        {messages.map((msg, idx) => (
+          <MessageItem
+            key={msg.id}
+            message={msg}
+            isLastAssistantMessage={idx === lastAssistantMessageIndex}
+          />
         ))}
       </div>
     </div>

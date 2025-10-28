@@ -5,11 +5,8 @@ import { useChat } from '../../contexts/ChatContext';
 import { ChatHeader } from './ChatHeader';
 import { MessageList } from './MessageList';
 import { ChatInputBar } from './ChatInputBar';
-import { TTSControlPanel } from '../TTS/TTSControlPanel';
-import { TTSStatusIndicator } from '../TTS/TTSStatusIndicator';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ScrollArea } from '../ui/scroll-area'; // Import ScrollArea
-import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ChatViewProps {
   isPopupMode?: boolean;
@@ -18,23 +15,8 @@ interface ChatViewProps {
 export function ChatView({ isPopupMode = false }: ChatViewProps) {
   const {
     messages,
-    ttsExaggeration,
-    setTtsExaggeration,
-    ttsCfgWeight,
-    setTtsCfgWeight,
-    ttsRefAudioFile,
-    setTtsRefAudioFile,
-    // + Get TTS status
-    ttsIsLoading,
-    ttsIsStreaming,
-    ttsIsPlaying,
-    ttsProgressPercent,
-    ttsCurrentChunk,
-    ttsTotalChunks,
-    ttsError
   } = useChat();
   const messagesContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable viewport
-  const [isTTSPanelOpen, setIsTTSPanelOpen] = useState(false);
 
   useEffect(() => {
     if (messagesContainerRef.current) {
@@ -47,44 +29,6 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
     <div className="flex flex-col h-full bg-white">
       {/* Minimal header */}
       <ChatHeader isPopupMode={isPopupMode} />
-
-      {/* TTS Status Indicator - Shows loading and progress */}
-      <TTSStatusIndicator
-        isLoading={ttsIsLoading}
-        isStreaming={ttsIsStreaming}
-        isPlaying={ttsIsPlaying}
-        progressPercent={ttsProgressPercent}
-        currentChunk={ttsCurrentChunk}
-        totalChunks={ttsTotalChunks}
-        error={ttsError}
-      />
-
-      {/* TTS Control Panel - Collapsible */}
-      <div className="border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-        <button
-          onClick={() => setIsTTSPanelOpen(!isTTSPanelOpen)}
-          className="w-full px-4 py-3 flex items-center justify-between hover:bg-blue-100/50 transition-colors"
-        >
-          <span className="text-sm font-semibold text-gray-700">Voice Synthesis Settings</span>
-          {isTTSPanelOpen ? (
-            <ChevronUp className="h-4 w-4 text-gray-600" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-gray-600" />
-          )}
-        </button>
-        {isTTSPanelOpen && (
-          <div className="px-4 pb-4">
-            <TTSControlPanel
-              exaggeration={ttsExaggeration}
-              cfgWeight={ttsCfgWeight}
-              selectedRefAudio={ttsRefAudioFile}
-              onExaggerationChange={setTtsExaggeration}
-              onCfgWeightChange={setTtsCfgWeight}
-              onRefAudioChange={setTtsRefAudioFile}
-            />
-          </div>
-        )}
-      </div>
 
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-h-0">
