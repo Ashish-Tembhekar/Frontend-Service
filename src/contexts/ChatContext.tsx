@@ -28,6 +28,7 @@ interface ChatContextType {
   ttsRefAudioFile: string | null;
   setTtsRefAudioFile: (filename: string | null) => void;
   // + Add TTS status properties
+  ttsIsConnected: boolean;
   ttsIsLoading: boolean;
   ttsIsStreaming: boolean;
   ttsIsPlaying: boolean;
@@ -46,6 +47,7 @@ interface ChatContextType {
   setIsHistoryPanelOpen: (isOpen: boolean) => void;
   getThreadTitle: (threadId: string) => string;
   stopCurrentAudio: () => void;
+  requestTTS: (text: string, language?: string) => void;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -421,6 +423,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsHistoryPanelOpen(prev => !prev);
   };
 
+  const requestTTS = useCallback((text: string, language: string = 'en') => {
+    streamingAudio.requestTTS(text, language, {
+      exaggeration: ttsExaggeration,
+      cfg_weight: ttsCfgWeight,
+      reference_audio_file: ttsRefAudioFile
+    });
+  }, [streamingAudio, ttsExaggeration, ttsCfgWeight, ttsRefAudioFile]);
+
   return (
     <ChatContext.Provider value={{
       chatThreads,
@@ -438,6 +448,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ttsRefAudioFile,
       setTtsRefAudioFile,
       // + Expose TTS status
+      ttsIsConnected: streamingAudio.isConnected,
       ttsIsLoading: streamingAudio.isLoading,
       ttsIsStreaming: streamingAudio.isStreaming,
       ttsIsPlaying: streamingAudio.isPlaying,
@@ -456,6 +467,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsHistoryPanelOpen,
       getThreadTitle,
       stopCurrentAudio,
+      requestTTS,
     }}>
       {children}
     </ChatContext.Provider>

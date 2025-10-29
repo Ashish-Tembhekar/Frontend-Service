@@ -8,7 +8,6 @@ import { useChat } from '@/contexts/ChatContext';
 import { useToast } from '@/hooks/use-toast';
 import { transcribeAndAskStreamingAPI } from '@/services/apiClientNew';
 import { cn } from '@/lib/utils';
-import { useStreamingAudio } from '@/hooks/useStreamingAudio';
 
 // Lottie Animation Component (unchanged)
 const LottieAnimation = ({ 
@@ -88,10 +87,19 @@ interface VoiceChatFullScreenProps {
 }
 
 export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProps) {
-  const { addProcessedMessages, isLoadingResponse, messages, stopCurrentAudio } = useChat();
+  const {
+    addProcessedMessages,
+    isLoadingResponse,
+    messages,
+    stopCurrentAudio,
+    requestTTS,
+    ttsIsPlaying,
+    ttsIsStreaming,
+    ttsIsConnected,
+    ttsCurrentChunk,
+    ttsTotalChunks
+  } = useChat();
   const { toast } = useToast();
-
-  const streamingAudio = useStreamingAudio();
   
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -178,26 +186,17 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   }, [isOpen]);
 
   // Connect to streaming audio when component mounts
-  useEffect(() => {
-    if (isOpen) {
-      streamingAudio.connect();
-    }
-    return () => {
-      streamingAudio.disconnect();
-    };
-  }, [isOpen]); // Re-run effect if isOpen changes
-
   // Handle streaming audio state changes
   useEffect(() => {
-      if (streamingAudio.isPlaying && !isPlayingResponse) {
+      if (ttsIsPlaying && !isPlayingResponse) {
         setIsPlayingResponse(true);
-      } else if (!streamingAudio.isPlaying && !streamingAudio.isStreaming && isPlayingResponse) {
+      } else if (!ttsIsPlaying && !ttsIsStreaming && isPlayingResponse) {
         setIsPlayingResponse(false);
         setCurrentAssistantText('');
         setCurrentUserText('');
         stopBargeInDetector();
       }
-  }, [streamingAudio.isPlaying, streamingAudio.isStreaming, isPlayingResponse]);
+  }, [ttsIsPlaying, ttsIsStreaming, isPlayingResponse]);
 
   const handleAutoStartRecording = async () => {
     if (isLoadingResponse || isTranscribing || isPlayingResponse) return;
@@ -245,7 +244,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           hotFrames += 1;
           if (hotFrames >= consecutiveFramesRequired) {
             isBargeInActiveRef.current = false;
-            streamingAudio.stopAudio(); // Stop streaming audio playback
+            stopCurrentAudio(); // Stop streaming audio playback
             setIsPlayingResponse(false);
             setCurrentAssistantText('');
             if (bargeInStreamRef.current) {
@@ -324,7 +323,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           'auto',
           (text: string, language: string) => {
             console.log('VoiceChatFullScreen - Starting streaming TTS for:', text.substring(0, 100) + '...');
-            streamingAudio.requestTTS(text, language);
+            requestTTS(text, language);
             setIsPlayingResponse(true);
             setCurrentAssistantText(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
             startBargeInDetector();
@@ -481,7 +480,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const startRecordingManual = async () => {
     try {
       if (isPlayingResponse) {
-        streamingAudio.stopAudio(); // Stop streaming audio
+        stopCurrentAudio(); // Stop streaming audio
         setIsPlayingResponse(false);
         setCurrentAssistantText('');
         stopBargeInDetector();
@@ -513,12 +512,12 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     if (isTranscribing) return "Processing your message...";
     if (isLoadingResponse) return "Thinking...";
     if (isPlayingResponse) {
-      if (streamingAudio.isStreaming) {
-        return `Speaking... (${streamingAudio.currentChunk}/${streamingAudio.totalChunks})`;
+      if (ttsIsStreaming) {
+        return `Speaking... (${ttsCurrentChunk}/${ttsTotalChunks})`;
       }
       return "Speaking...";
     }
-    return streamingAudio.isConnected
+    return ttsIsConnected
       ? "Tap the mic to start (Streaming Ready)"
       : "Tap the mic to start (Connecting...)";
   };

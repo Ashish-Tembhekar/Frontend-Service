@@ -39,6 +39,8 @@ export function useStreamingAudio() {
   const isConnectingRef = useRef(false);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastHeartbeatRef = useRef<number>(Date.now());
 
   const [state, setState] = useState<StreamingAudioState>({
     isConnected: false,
@@ -67,15 +69,15 @@ export function useStreamingAudio() {
       const audio = new Audio(audioUrl);
       currentAudioRef.current = audio;
 
-      // Calculate progress percentage
-      const progressPercent = state.totalChunks > 0
-        ? Math.round((chunk.chunk_index / state.totalChunks) * 100)
-        : 0;
-
       audio.onended = () => {
         currentAudioRef.current = null;
-        // Update progress as chunks finish playing
-        setState(prev => ({ ...prev, progressPercent }));
+        // Update progress as chunks finish playing - calculate progress using prev state
+        setState(prev => {
+          const progressPercent = prev.totalChunks > 0
+            ? Math.round((chunk.chunk_index / prev.totalChunks) * 100)
+            : 0;
+          return { ...prev, progressPercent };
+        });
         // Use a small timeout to prevent race conditions between chunks
         setTimeout(playNextChunk, 240);
       };
@@ -96,16 +98,50 @@ export function useStreamingAudio() {
       console.error('🎵 Error creating audio element:', error);
       setState(prev => ({ ...prev, error: 'Failed to create audio element', isLoading: false }));
     }
-  }, [state.totalChunks]);
+  }, []); // Empty dependency array - all state access is through setState callbacks
+
+  const startHeartbeat = useCallback(() => {
+    // Clear any existing heartbeat
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+
+    // Send ping every 15 seconds (well before the server's timeout)
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        console.log('🎵 Sending keepalive ping to TTS server');
+        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 15000); // 15 seconds
+  }, []);
+
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
 
   const handleWebSocketMessage = useCallback((message: any) => {
     switch (message.type) {
+      case 'pong':
+        // Server responded to our ping
+        console.log('🎵 Received pong from TTS server');
+        lastHeartbeatRef.current = Date.now();
+        break;
+
       case 'info':
         // This message from Chatterbox tells us how many chunks to expect
         setState(prev => ({ ...prev, totalChunks: message.total_chunks }));
         break;
 
       case 'audio_chunk':
+        console.log(`🎵 Received audio chunk ${message.chunk_index + 1}/${message.total_chunks}`);
+        console.log(`🎵 Queue length before push: ${playbackQueueRef.current.length}`);
+        console.log(`🎵 Currently playing: ${isPlayingRef.current}`);
+        console.log(`🎵 WebSocket readyState: ${wsRef.current?.readyState}`);
+
         const chunkData: ChatterboxAudioChunk = {
           audio_data: message.audio_data,
           chunk_index: message.chunk_index,
@@ -117,10 +153,12 @@ export function useStreamingAudio() {
         };
 
         playbackQueueRef.current.push(chunkData);
+        console.log(`🎵 Queue length after push: ${playbackQueueRef.current.length}`);
         // Hide loading icon once first chunk arrives, show progress bar
         setState(prev => ({ ...prev, isStreaming: true, currentChunk: message.chunk_index + 1, isLoading: false }));
 
         if (!isPlayingRef.current) {
+          console.log(`🎵 Starting playback for first chunk`);
           isPlayingRef.current = true;
           setState(prev => ({ ...prev, isPlaying: true }));
           playNextChunk();
@@ -169,7 +207,11 @@ export function useStreamingAudio() {
           connectionTimeoutRef.current = null;
         }
         isConnectingRef.current = false;
+        lastHeartbeatRef.current = Date.now();
         setState(prev => ({ ...prev, isConnected: true }));
+
+        // Start sending keepalive pings
+        startHeartbeat();
       };
 
       ws.onmessage = (event) => {
@@ -181,8 +223,15 @@ export function useStreamingAudio() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         console.log('🎵 Streaming TTS WebSocket disconnected');
+        console.log('🎵 Close event code:', event.code);
+        console.log('🎵 Close event reason:', event.reason);
+        console.log('🎵 Close event wasClean:', event.wasClean);
+
+        // Stop heartbeat
+        stopHeartbeat();
+
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -199,6 +248,8 @@ export function useStreamingAudio() {
 
       ws.onerror = (error) => {
         console.error('🎵 Streaming TTS WebSocket error:', error);
+        console.error('🎵 WebSocket readyState:', ws.readyState);
+        console.error('🎵 WebSocket URL:', ws.url);
         if (connectionTimeoutRef.current) {
           clearTimeout(connectionTimeoutRef.current);
           connectionTimeoutRef.current = null;
@@ -212,7 +263,7 @@ export function useStreamingAudio() {
       isConnectingRef.current = false;
       setState(prev => ({ ...prev, error: 'Failed to create WebSocket connection', isLoading: false }));
     }
-  }, [handleWebSocketMessage]);
+  }, [handleWebSocketMessage, startHeartbeat, stopHeartbeat]);
 
   const stopAudio = useCallback(() => {
     if (currentAudioRef.current) {
@@ -262,6 +313,7 @@ export function useStreamingAudio() {
 
   const disconnect = useCallback(() => {
     stopAudio();
+    stopHeartbeat();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -285,13 +337,41 @@ export function useStreamingAudio() {
       isLoading: false,
       progressPercent: 0
     });
-  }, [stopAudio]);
+  }, [stopAudio, stopHeartbeat]);
 
   useEffect(() => {
+    // Cleanup function to disconnect when component unmounts
     return () => {
-      disconnect();
+      // Call disconnect logic directly to avoid dependency issues
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+        currentAudioRef.current = null;
+      }
+      playbackQueueRef.current = [];
+      isPlayingRef.current = false;
+
+      // Stop heartbeat
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (connectionTimeoutRef.current) {
+        clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+      }
+      isConnectingRef.current = false;
     };
-  }, [disconnect]);
+  }, []); // Empty dependency array - only run on mount/unmount
 
   return { ...state, connect, disconnect, requestTTS, stopAudio };
 }
