@@ -6,10 +6,10 @@
 export const appConfig = {
   appName: "Technical AI Assistant",
   // Base URL for the FastAPI backend (for text generation)
-  fastApiBaseUrl: process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "https://xxvzsj4f-8000.inc1.devtunnels.ms",
+  fastApiBaseUrl: process.env.NEXT_PUBLIC_FASTAPI_BASE_URL || "http://localhost:8000",
   
   // + ADDED: Direct URL for the Chatterbox/Lightning AI streaming TTS service
-  chatterboxTtsUrl: process.env.NEXT_PUBLIC_CHATTERBOX_TTS_URL || "https://xxvzsj4f-7860.inc1.devtunnels.ms",
+  chatterboxTtsUrl: process.env.NEXT_PUBLIC_CHATTERBOX_TTS_URL || "http://localhost:7860",
 
   // Developer mode toggle (mirrors backend DEVELOPER_MODE)
   developerMode: (process.env.NEXT_PUBLIC_DEVELOPER_MODE || "false").toLowerCase() === "true",

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { ChatProvider } from '../contexts/ChatContext';
 import { Toaster } from "../components/ui/toaster";
+import { AuthProvider } from '../contexts/AuthContext';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -56,10 +57,12 @@ export default function RootLayout({
         <meta name="msapplication-tap-highlight" content="no" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col h-full overflow-hidden`}>
-        <ChatProvider>
-          {children}
-          <Toaster />
-        </ChatProvider>
+        <AuthProvider>
+          <ChatProvider>
+            {children}
+            <Toaster />
+          </ChatProvider>
+        </AuthProvider>
       </body>
     </html>
   );

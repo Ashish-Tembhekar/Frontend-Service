@@ -26,13 +26,20 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '50mb',
     },
   },
-  // Configure export to handle client-side routing
-  exportPathMap: async function () {
-    return {
-      '/': { page: '/' },
-      '/dashboard': { page: '/dashboard' },
-      '/popup': { page: '/popup' },
-    }
+  async headers() {
+    return [
+      {
+        // Apply this header to all routes in your application
+        source: '/:path*', 
+        headers: [
+          {
+            key: 'Cross-Origin-Opener-Policy',
+            // Set the policy to allow popups to maintain a reference (window.opener)
+            value: 'same-origin-allow-popups', 
+          },
+        ],
+      },
+    ];
   },
 };
 

@@ -5,8 +5,8 @@ import React from 'react';
 import { Button } from '../ui/button';
 import { PanelLeftClose, PanelLeftOpen, PlusCircle, BarChart3, Sparkles } from 'lucide-react';
 import { useChat } from '../../contexts/ChatContext';
-import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
+import { UserMenu } from '../Auth/UserMenu';
 import Link from 'next/link';
 
 interface ChatHeaderProps {
@@ -63,14 +63,7 @@ return (
           </Button>
         </Link>
 
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full">
-          <Avatar className="h-6 w-6">
-            <AvatarFallback className="bg-gray-600 text-white text-xs font-medium">
-              GU
-            </AvatarFallback>
-          </Avatar>
-          <span className="text-sm text-gray-600 hidden sm:inline">Guest</span>
-        </div>
+        <UserMenu />
       </div>
     </div>
   );

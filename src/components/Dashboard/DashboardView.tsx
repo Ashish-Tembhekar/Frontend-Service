@@ -34,6 +34,7 @@ import Link from 'next/link';
 import { ChunksModal } from './ChunksModal';
 import { TTSControlPanel } from '../TTS/TTSControlPanel';
 import { useChat } from '../../contexts/ChatContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 // Types for the dashboard
 interface FileStats {
@@ -100,6 +101,9 @@ export function DashboardView() {
   const [uploadConfig, setUploadConfig] = useState<UploadConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Get auth user
+  const { user } = useAuth();
 
   // Get TTS settings from ChatContext
   const {
@@ -385,7 +389,7 @@ export function DashboardView() {
           
           <div className="flex items-center space-x-2 text-sm opacity-75">
             <User className="w-3 h-3" />
-            <span>User: {userId.slice(-8)}</span>
+            <span>User: {user?.username || user?.email || userId.slice(-8)}</span>
           </div>
         </div>
         
