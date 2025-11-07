@@ -8,7 +8,6 @@ import {
   signOut as firebaseSignOut,
   signInWithPopup,
   GoogleAuthProvider,
-  OAuthProvider,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -17,7 +16,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 // Import the auth instance and providers from your Firebase configuration file
 // Assumes the config file exports these correctly (Step 1 & 4 from previous response)
-import { auth, googleProvider, microsoftProvider, db } from '../lib/firebase/config';
+import { auth, googleProvider, db } from '../lib/firebase/config';
 
 // --- Type Definitions ---
 
@@ -25,6 +24,7 @@ export interface AuthUser {
   uid: string;
   email: string | null;
   username: string | null;
+  isApproved: boolean;
   // Add other user profile data here if needed (e.g., displayName, photoURL)
 }
 
@@ -35,7 +35,6 @@ interface AuthHook {
   signInEmail: (email: string, password: string) => Promise<User>;
   signUpEmail: (email: string, password: string, username: string) => Promise<User>;
   signInGoogle: () => Promise<User>;
-  signInMicrosoft: () => Promise<User>;
   resetPassword: (email: string) => Promise<void>;
 }
 
@@ -54,20 +53,24 @@ export function useAuthUser(): AuthHook {
     // the user signs in, signs out, or their token refreshes.
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
       if (firebaseUser) {
-        // Fetch username from Firestore
+        // Fetch username and approval status from Firestore
         try {
           const userDocRef = doc(db, 'users', firebaseUser.uid);
           const userDocSnap = await getDoc(userDocRef);
 
           let username = null;
+          let isApproved = false;
           if (userDocSnap.exists()) {
-            username = userDocSnap.data()?.username || null;
+            const userData = userDocSnap.data();
+            username = userData?.username || null;
+            isApproved = userData?.isApproved || false;
           }
 
           setUser({
             uid: firebaseUser.uid,
             email: firebaseUser.email,
             username: username,
+            isApproved: isApproved,
           });
         } catch (error) {
           console.error('Error fetching user data from Firestore:', error);
@@ -75,6 +78,7 @@ export function useAuthUser(): AuthHook {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
             username: null,
+            isApproved: false,
           });
         }
       } else {
@@ -102,12 +106,13 @@ export function useAuthUser(): AuthHook {
   const signUpEmail = useCallback(async (email: string, password: string, username: string) => {
     const result = await createUserWithEmailAndPassword(auth, email, password);
 
-    // Save username to Firestore
+    // Save username and approval status to Firestore
     try {
       const userDocRef = doc(db, 'users', result.user.uid);
       await setDoc(userDocRef, {
         username: username,
         email: email,
+        isApproved: false,
         createdAt: new Date().toISOString(),
       });
     } catch (error) {
@@ -121,22 +126,37 @@ export function useAuthUser(): AuthHook {
 
   const signInGoogle = useCallback(async () => {
     const result = await signInWithPopup(auth, googleProvider);
+
+    // Create or update user document in Firestore
+    try {
+      const userDocRef = doc(db, 'users', result.user.uid);
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (!userDocSnap.exists()) {
+        // New user - create document with isApproved: false
+        await setDoc(userDocRef, {
+          username: result.user.displayName || result.user.email?.split('@')[0] || 'User',
+          email: result.user.email,
+          isApproved: false,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error('Error saving Google user data to Firestore:', error);
+    }
+
     // User state is updated automatically by the onAuthStateChanged listener
     return result.user;
   }, []);
 
-  const signInMicrosoft = useCallback(async () => {
-    const result = await signInWithPopup(auth, microsoftProvider);
-    // User state is updated automatically by the onAuthStateChanged listener
-    return result.user;
-  }, []);
+
   
   const resetPassword = useCallback(async (email: string) => {
     await sendPasswordResetEmail(auth, email);
   }, []);
 
   // --- Return Exposed State and Actions ---
-  
+
   return {
     user,
     loading,
@@ -144,7 +164,6 @@ export function useAuthUser(): AuthHook {
     signInEmail,
     signUpEmail,
     signInGoogle,
-    signInMicrosoft,
     resetPassword,
   };
 }

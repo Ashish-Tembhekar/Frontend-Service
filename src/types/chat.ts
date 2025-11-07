@@ -73,6 +73,20 @@ export interface Source {
 }
 
 /**
+ * Usage data from OpenAI API
+ */
+export interface UsageSummary {
+  total_calls: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  user_id?: string;
+  model?: string;
+  provider?: string;
+}
+
+/**
  * Represents the response from the GET /ask/ endpoint.
  */
 export interface AskQuestionResponse {
@@ -80,6 +94,7 @@ export interface AskQuestionResponse {
   answer: string; // This is an HTML string
   sources: Source[];
   audio: AudioData | null;
+  usage?: UsageSummary | null; // OpenAI API usage data (only present when using OpenAI)
   // Fields from parallel transcribe-and-ask endpoint
   original_text?: string;
   translated_text?: string;

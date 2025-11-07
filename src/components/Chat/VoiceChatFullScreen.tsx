@@ -8,6 +8,8 @@ import { useChat } from '@/contexts/ChatContext';
 import { useToast } from '@/hooks/use-toast';
 import { transcribeAndAskStreamingAPI } from '@/services/apiClientNew';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { logUsageToFirestore } from '@/services/usageLogger';
 
 // Lottie Animation Component (unchanged)
 const LottieAnimation = ({ 
@@ -100,6 +102,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     ttsTotalChunks
   } = useChat();
   const { toast } = useToast();
+  const { user } = useAuth(); // Get authenticated user for usage tracking
   
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -327,8 +330,14 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             setIsPlayingResponse(true);
             setCurrentAssistantText(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
             startBargeInDetector();
-          }
+          },
+          user?.uid
         );
+
+        // Log usage data to Firestore if available
+        if (response.usage && user?.uid) {
+          await logUsageToFirestore(user.uid, response.usage);
+        }
         
         if (response.original_text && response.original_text.trim()) {
           setCurrentUserText(response.original_text);

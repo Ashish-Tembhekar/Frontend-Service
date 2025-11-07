@@ -21,7 +21,7 @@ const formSchema = z.object({
 });
 
 export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }) {
-  const { signInEmail, signInGoogle, signInMicrosoft, loading: authLoading } = useAuth();
+  const { signInEmail, signInGoogle, loading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -47,18 +47,14 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
     }
   }
   
-  async function handleSocialLogin(provider: 'google' | 'microsoft') {
+  async function handleGoogleLogin() {
     setError(null);
     try {
-      if (provider === 'google') {
-        await signInGoogle();
-      } else {
-        await signInMicrosoft();
-      }
+      await signInGoogle();
       // Success is handled by the useEffect in the protected page
     } catch (err: any) {
       console.error(err);
-      setError(`Login with ${provider} failed.`);
+      setError('Login with Google failed.');
     }
   }
 
@@ -80,12 +76,12 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
         )}
         
         {/* Social Logins */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="flex justify-center">
           <Button
             variant="outline"
-            // onClick={() => handleSocialLogin('google')}
+            onClick={handleGoogleLogin}
             disabled={isLoading}
-            className="flex items-center justify-center gap-2"
+            className="flex items-center justify-center gap-2 w-full"
           >
             <Image
               src="https://png.pngtree.com/png-vector/20230817/ourmid/pngtree-google-internet-icon-vector-png-image_9183287.png"
@@ -94,22 +90,7 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
               height={20}
               className="object-contain"
             />
-            Google
-          </Button>
-          <Button
-            variant="outline"
-            // onClick={() => handleSocialLogin('microsoft')}
-            disabled={isLoading}
-            className="flex items-center justify-center gap-2"
-          >
-            <Image
-              src="https://cdn4.iconfinder.com/data/icons/social-media-logos-6/512/78-microsoft-512.png"
-              alt="Microsoft"
-              width={20}
-              height={20}
-              className="object-contain"
-            />
-            Microsoft
+            Continue with Google
           </Button>
         </div>
         

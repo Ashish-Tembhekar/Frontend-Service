@@ -19,9 +19,14 @@ export default function FullScreenChatPage() {
 
   // Redirect logic - protect the chat interface
   useEffect(() => {
-    if (!loading && !user) {
-      // User is not logged in, redirect to login page
-      router.push('/login');
+    if (!loading) {
+      if (!user) {
+        // User is not logged in, redirect to login page
+        router.push('/login');
+      } else if (!user.isApproved) {
+        // User is not approved, redirect to pending approval page
+        router.push('/pending-approval');
+      }
     }
   }, [user, loading, router]);
 
@@ -54,8 +59,8 @@ export default function FullScreenChatPage() {
     );
   }
 
-  // Only render the chat interface if the user is authenticated
-  if (!user) {
+  // Only render the chat interface if the user is authenticated and approved
+  if (!user || !user.isApproved) {
     return null; // Will redirect in useEffect
   }
 

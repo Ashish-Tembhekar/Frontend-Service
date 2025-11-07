@@ -12,7 +12,6 @@ interface AuthContextType {
   signInEmail: (email: string, password: string) => Promise<User>;
   signUpEmail: (email: string, password: string, username: string) => Promise<User>;
   signInGoogle: () => Promise<User>;
-  signInMicrosoft: () => Promise<User>;
   resetPassword: (email: string) => Promise<void>;
 }
 

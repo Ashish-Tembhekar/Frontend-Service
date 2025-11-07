@@ -3,8 +3,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
-  GoogleAuthProvider,     // Import Google Provider
-  OAuthProvider           // Import Microsoft/Apple/Yahoo Provider
+  GoogleAuthProvider     // Import Google Provider
 } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -30,4 +29,3 @@ export const db = getFirestore(firebaseApp);
 
 // Export Providers
 export const googleProvider = new GoogleAuthProvider();
-export const microsoftProvider = new OAuthProvider('microsoft.com');

@@ -111,34 +111,41 @@ export async function deleteFileChunks(uuid: string): Promise<DeleteChunksRespon
  * Now includes conversation history for context as a formatted string.
  */
 export async function askQuestionAPI(
-  query: string, 
-  conversationHistory?: string, 
+  query: string,
+  conversationHistory?: string,
   detectedLang?: string,
-  needsAudio: boolean = false
+  needsAudio: boolean = false,
+  userId?: string
 ): Promise<AskQuestionResponse> {
   try {
     console.log('apiClientNew - askQuestionAPI called with query:', query);
     console.log('apiClientNew - askQuestionAPI called with conversationHistory:', conversationHistory);
     console.log('apiClientNew - askQuestionAPI called with detectedLang:', detectedLang);
     console.log('apiClientNew - askQuestionAPI called with needsAudio:', needsAudio);
-    
+    console.log('apiClientNew - askQuestionAPI called with userId:', userId);
+
     const url = new URL(`${appConfig.fastApiBaseUrl}/ask/`);
     url.searchParams.append('q', query);
-    
+
     if (detectedLang) {
       url.searchParams.append('detected_lang', detectedLang);
     }
-    
+
     // Add conversation history as a string parameter
     if (conversationHistory && conversationHistory.trim() !== '') {
       url.searchParams.append('conversation_history', conversationHistory);
     }
-    
+
     // Add audio flag parameter
     if (needsAudio) {
       url.searchParams.append('needs_audio', 'true');
     }
-    
+
+    // Add user ID for usage tracking
+    if (userId) {
+      url.searchParams.append('user_id', userId);
+    }
+
     console.log('apiClientNew - Request URL:', url.toString());
     
     const response = await fetch(url.toString(), {
@@ -224,28 +231,35 @@ export async function transcribeAndAskAPI(
     audioBlob: Blob,
     conversationHistory?: string,
     selectedLanguage?: string,
-    needsAudio: boolean = true
+    needsAudio: boolean = true,
+    userId?: string
 ): Promise<AskQuestionResponse> {
     console.log('apiClientNew - transcribeAndAskAPI called with blob size:', audioBlob.size);
     console.log('apiClientNew - transcribeAndAskAPI conversationHistory:', conversationHistory);
     console.log('apiClientNew - transcribeAndAskAPI selectedLanguage:', selectedLanguage);
     console.log('apiClientNew - transcribeAndAskAPI needsAudio:', needsAudio);
+    console.log('apiClientNew - transcribeAndAskAPI userId:', userId);
 
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
-    
+
     // Add conversation history if provided
     if (conversationHistory && conversationHistory.trim() !== '') {
         formData.append('conversation_history', conversationHistory);
     }
-    
+
     // Add selected language if provided
     if (selectedLanguage && selectedLanguage !== 'auto') {
         formData.append('selected_language', selectedLanguage);
     }
-    
+
     // Add audio flag
     formData.append('needs_audio', needsAudio.toString());
+
+    // Add user ID for usage tracking
+    if (userId) {
+        formData.append('user_id', userId);
+    }
 
     try {
         console.log('apiClientNew - Making parallel transcribe-and-ask request to:', `${appConfig.fastApiBaseUrl}/transcribe-and-ask/`);
@@ -291,11 +305,13 @@ export async function transcribeAndAskStreamingAPI(
     audioBlob: Blob,
     conversationHistory?: string,
     selectedLanguage?: string,
-    onStreamingAudio?: (text: string, language: string) => void
+    onStreamingAudio?: (text: string, language: string) => void,
+    userId?: string
 ): Promise<AskQuestionResponse> {
     console.log('apiClientNew - transcribeAndAskStreamingAPI called with blob size:', audioBlob.size);
     console.log('apiClientNew - transcribeAndAskStreamingAPI conversationHistory:', conversationHistory);
     console.log('apiClientNew - transcribeAndAskStreamingAPI selectedLanguage:', selectedLanguage);
+    console.log('apiClientNew - transcribeAndAskStreamingAPI userId:', userId);
 
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
@@ -312,6 +328,11 @@ export async function transcribeAndAskStreamingAPI(
 
     // Request text response without audio (we'll stream audio separately)
     formData.append('needs_audio', 'false');
+
+    // Add user ID for usage tracking
+    if (userId) {
+        formData.append('user_id', userId);
+    }
 
     try {
         console.log('apiClientNew - Making streaming transcribe-and-ask request to:', `${appConfig.fastApiBaseUrl}/transcribe-and-ask/`);

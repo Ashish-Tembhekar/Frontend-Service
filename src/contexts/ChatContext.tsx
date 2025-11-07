@@ -9,6 +9,8 @@ import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion } from '.
 import { useToast } from '../hooks/use-toast';
 import { validateFileSize } from '../lib/utils';
 import { useStreamingAudio } from '../hooks/useStreamingAudio';
+import { useAuth } from './AuthContext';
+import { logUsageToFirestore } from '../services/usageLogger';
 
 interface ChatContextType {
   chatThreads: ChatThread[];
@@ -72,6 +74,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
   const { toast } = useToast();
   const streamingAudio = useStreamingAudio();
+  const { user } = useAuth(); // Get authenticated user for usage tracking
 
   // + Add state for the audio response toggle, persisted in local storage
   const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
@@ -293,10 +296,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
       
-      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, false);
-      
+      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, false, user?.uid);
+
       if (!response || !response.answer) {
         throw new Error('No valid response received from the AI service.');
+      }
+
+      // Log usage data to Firestore if available
+      if (response.usage && user?.uid) {
+        await logUsageToFirestore(user.uid, response.usage);
       }
       
       const finalAssistantMessage: Message = {

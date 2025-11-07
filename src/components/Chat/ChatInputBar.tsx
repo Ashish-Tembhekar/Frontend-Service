@@ -14,12 +14,15 @@ import { transcribeAudioAPI as transcribeAudio, transcribeAndAskAPI } from '../.
 import { VoiceChatFullScreen } from './VoiceChatFullScreen';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { useAuth } from '../../contexts/AuthContext';
+import { logUsageToFirestore } from '../../services/usageLogger';
 
 
 export function ChatInputBar() {
   const [inputValue, setInputValue] = useState('');
   // + Destructure the new state and toggle function from the context
   const { sendMessage, addProcessedMessages, uploadFile, isLoadingResponse, messages, stopCurrentAudio, isAudioResponseEnabled, toggleAudioResponse } = useChat();
+  const { user } = useAuth(); // Get authenticated user for usage tracking
   
   const languageOptions = [
     { value: 'auto', label: 'Auto-detect' },
@@ -132,12 +135,18 @@ export function ChatInputBar() {
           audioBlob,
           conversationHistoryString,
           selectedLanguage,
-          true
+          true,
+          user?.uid
         );
-        
+
+        // Log usage data to Firestore if available
+        if (response.usage && user?.uid) {
+          await logUsageToFirestore(user.uid, response.usage);
+        }
+
         if (response.original_text && response.original_text.trim()) {
           setInputValue(response.original_text);
-          
+
           const userMessage = {
             id: `msg_user_${Date.now()}`,
             role: 'user' as const,

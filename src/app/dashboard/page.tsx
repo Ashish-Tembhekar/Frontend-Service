@@ -12,9 +12,14 @@ export default function ProtectedDashboardPage() {
 
   // Redirect logic
   useEffect(() => {
-    if (!loading && !user) {
-      // User is not logged in, redirect to a login page (you'll need to create one)
-      router.push('/login'); // Assuming you'll create a /login route
+    if (!loading) {
+      if (!user) {
+        // User is not logged in, redirect to login page
+        router.push('/login');
+      } else if (!user.isApproved) {
+        // User is not approved, redirect to pending approval page
+        router.push('/pending-approval');
+      }
     }
   }, [user, loading, router]);
 
@@ -28,8 +33,8 @@ export default function ProtectedDashboardPage() {
     );
   }
 
-  // Only render the dashboard if the user is authenticated
-  if (user) {
+  // Only render the dashboard if the user is authenticated and approved
+  if (user && user.isApproved) {
     return (
       <div className="min-h-screen bg-white relative overflow-y-auto">
         {/* Clean subtle pattern like reference */}

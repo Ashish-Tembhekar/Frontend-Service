@@ -11,10 +11,14 @@ export default function SignupPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   
-  // Redirect authenticated users to the main page
+  // Redirect authenticated users to the appropriate page
   useEffect(() => {
     if (!loading && user) {
-      router.push('/');
+      if (user.isApproved) {
+        router.push('/dashboard');
+      } else {
+        router.push('/pending-approval');
+      }
     }
   }, [user, loading, router]);
   
