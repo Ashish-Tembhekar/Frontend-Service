@@ -33,6 +33,7 @@ import { appConfig } from '../../lib/config';
 import Link from 'next/link';
 import { ChunksModal } from './ChunksModal';
 import { TTSControlPanel } from '../TTS/TTSControlPanel';
+import { RoleConfiguration } from './RoleConfiguration';
 import { useChat } from '../../contexts/ChatContext';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -742,6 +743,9 @@ export function DashboardView() {
            )}
          </TabsContent>
       </Tabs>
+
+      {/* Role Configuration */}
+      <RoleConfiguration />
 
       {/* TTS Control Panel */}
       <Card className="bg-white border-gray-200 shadow-sm">

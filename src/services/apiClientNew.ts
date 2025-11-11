@@ -115,7 +115,8 @@ export async function askQuestionAPI(
   conversationHistory?: string,
   detectedLang?: string,
   needsAudio: boolean = false,
-  userId?: string
+  userId?: string,
+  systemPrompt?: string
 ): Promise<AskQuestionResponse> {
   try {
     console.log('apiClientNew - askQuestionAPI called with query:', query);
@@ -123,6 +124,7 @@ export async function askQuestionAPI(
     console.log('apiClientNew - askQuestionAPI called with detectedLang:', detectedLang);
     console.log('apiClientNew - askQuestionAPI called with needsAudio:', needsAudio);
     console.log('apiClientNew - askQuestionAPI called with userId:', userId);
+    console.log('apiClientNew - askQuestionAPI called with systemPrompt:', systemPrompt);
 
     const url = new URL(`${appConfig.fastApiBaseUrl}/ask/`);
     url.searchParams.append('q', query);
@@ -146,8 +148,13 @@ export async function askQuestionAPI(
       url.searchParams.append('user_id', userId);
     }
 
+    // Add system prompt for role-based responses
+    if (systemPrompt) {
+      url.searchParams.append('system_prompt', systemPrompt);
+    }
+
     console.log('apiClientNew - Request URL:', url.toString());
-    
+
     const response = await fetch(url.toString(), {
       method: 'GET',
       headers: {

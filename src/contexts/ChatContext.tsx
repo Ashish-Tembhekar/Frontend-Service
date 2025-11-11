@@ -11,6 +11,7 @@ import { validateFileSize } from '../lib/utils';
 import { useStreamingAudio } from '../hooks/useStreamingAudio';
 import { useAuth } from './AuthContext';
 import { logUsageToFirestore } from '../services/usageLogger';
+import { db } from '../lib/firebase/config';
 
 interface ChatContextType {
   chatThreads: ChatThread[];
@@ -38,6 +39,12 @@ interface ChatContextType {
   ttsCurrentChunk: number;
   ttsTotalChunks: number;
   ttsError: string | null;
+  // + Add role and system prompt properties
+  chatbotRole: string;
+  setChatbotRole: (role: string) => void;
+  systemPrompt: string;
+  setSystemPrompt: (prompt: string) => void;
+  isLoadingRoleConfig: boolean;
   sendMessage: (userInput: string, originalText?: string, isVoiceMessage?: boolean, detectedLang?: string) => Promise<void>;
   addProcessedMessages: (userMessage: Message, assistantMessage: Message) => void;
   uploadFile: (file: File) => Promise<void>;
@@ -83,6 +90,37 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [ttsExaggeration, setTtsExaggeration] = useLocalStorage('nexus_tts_exaggeration_v1', 0.5);
   const [ttsCfgWeight, setTtsCfgWeight] = useLocalStorage('nexus_tts_cfg_weight_v1', 0.5);
   const [ttsRefAudioFile, setTtsRefAudioFile] = useLocalStorage<string | null>('nexus_tts_ref_audio_file_v1', null);
+
+  // + Add role and system prompt state
+  const [chatbotRole, setChatbotRole] = useLocalStorage('nexus_chatbot_role_v1', 'Helpful Document Assistant');
+  const [systemPrompt, setSystemPrompt] = useLocalStorage('nexus_system_prompt_v1', 'You are a helpful document assistant. Provide clear, accurate, and concise answers based on the provided documents.');
+  const [isLoadingRoleConfig, setIsLoadingRoleConfig] = useState(false);
+
+  // Load role configuration from Firestore on mount
+  useEffect(() => {
+    const loadRoleConfig = async () => {
+      if (!user?.uid) return;
+
+      try {
+        setIsLoadingRoleConfig(true);
+        const { doc, getDoc, collection } = await import('firebase/firestore');
+        const docRef = doc(db, 'users', user.uid, 'config', 'chatbot');
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.role) setChatbotRole(data.role);
+          if (data.systemPrompt) setSystemPrompt(data.systemPrompt);
+        }
+      } catch (error) {
+        console.error('Error loading role config from Firestore:', error);
+      } finally {
+        setIsLoadingRoleConfig(false);
+      }
+    };
+
+    loadRoleConfig();
+  }, [user?.uid]);
 
   useEffect(() => {
     streamingAudio.connect();
@@ -296,7 +334,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
       
-      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, false, user?.uid);
+      const response = await askQuestion(userInput, conversationHistoryString, detectedLang, false, user?.uid, systemPrompt);
 
       if (!response || !response.answer) {
         throw new Error('No valid response received from the AI service.');
@@ -464,6 +502,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ttsCurrentChunk: streamingAudio.currentChunk,
       ttsTotalChunks: streamingAudio.totalChunks,
       ttsError: streamingAudio.error,
+      // + Expose role and system prompt
+      chatbotRole,
+      setChatbotRole,
+      systemPrompt,
+      setSystemPrompt,
+      isLoadingRoleConfig,
       sendMessage,
       addProcessedMessages,
       uploadFile,
