@@ -185,6 +185,46 @@ export async function askQuestionAPI(
 }
 
 /**
+ * Generates a system prompt based on a role using the backend LLM.
+ */
+export async function generateSystemPromptAPI(role: string): Promise<{ role: string; system_prompt: string; success: boolean }> {
+  try {
+    console.log('apiClientNew - generateSystemPromptAPI called with role:', role);
+
+    const url = new URL(`${appConfig.fastApiBaseUrl}/generate-system-prompt/`);
+    url.searchParams.append('role', role);
+
+    console.log('apiClientNew - Request URL:', url.toString());
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+
+    console.log('apiClientNew - Response status:', response.status);
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Error from FastAPI backend during prompt generation:", response.status, errorBody);
+      throw new Error(`Prompt generation failed with status ${response.status}: ${errorBody}`);
+    }
+
+    const result = await response.json();
+    console.log('apiClientNew - Generated prompt:', result);
+    return result;
+
+  } catch (error) {
+    console.error("Error calling generate-system-prompt endpoint:", error);
+    if (error instanceof Error && error.message.startsWith('Prompt generation failed')) {
+      throw error;
+    }
+    throw new Error("Failed to generate system prompt. Please check the backend connection or try again.");
+  }
+}
+
+/**
  * Transcribes an audio file using the backend service.
  */
 export async function transcribeAudioAPI(audioBlob: Blob): Promise<TranscribeResponse> {

@@ -8,6 +8,7 @@ import { useChat } from '../../contexts/ChatContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { db } from '../../lib/firebase/config';
+import { generateSystemPromptAPI } from '../../services/apiClientNew';
 
 export function RoleConfiguration() {
   const { chatbotRole, setChatbotRole, systemPrompt, setSystemPrompt } = useChat();
@@ -19,7 +20,7 @@ export function RoleConfiguration() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Generate system prompt based on role
+  // Generate system prompt based on role using LLM
   const generateSystemPrompt = async () => {
     if (!role.trim()) {
       toast({
@@ -32,25 +33,22 @@ export function RoleConfiguration() {
 
     setIsGenerating(true);
     try {
-      // For now, create a reasonable default prompt based on the role
-      const generatedPrompt = `You are a ${role}. Provide clear, accurate, and helpful responses based on the provided documents. 
-      
-      Guidelines:
-      - Answer questions directly and concisely
-      - Use the document content as your primary source
-      - Maintain a professional and helpful tone
-      - If information is not in the documents, clearly state that
-      - Provide relevant context and examples when helpful`;
+      const result = await generateSystemPromptAPI(role.trim());
 
-      setPrompt(generatedPrompt);
-      toast({
-        title: "Success",
-        description: "System prompt generated successfully",
-      });
+      if (result.success && result.system_prompt) {
+        setPrompt(result.system_prompt);
+        toast({
+          title: "Success",
+          description: "System prompt generated successfully using AI",
+        });
+      } else {
+        throw new Error("Invalid response from prompt generation");
+      }
     } catch (error) {
+      console.error('Error generating system prompt:', error);
       toast({
         title: "Error",
-        description: "Failed to generate system prompt",
+        description: error instanceof Error ? error.message : "Failed to generate system prompt",
         variant: "destructive",
       });
     } finally {

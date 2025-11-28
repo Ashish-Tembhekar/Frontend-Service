@@ -162,6 +162,17 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []); 
 
   useEffect(() => {
+    // Remove duplicate empty threads - keep only one empty "New Chat" thread
+    const emptyThreads = chatThreads.filter(t => t.messages.length === 0 && t.title === 'New Chat');
+    const nonEmptyThreads = chatThreads.filter(t => t.messages.length > 0);
+
+    // If there are multiple empty threads, keep only the most recent one
+    if (emptyThreads.length > 1) {
+      const mostRecentEmpty = [...emptyThreads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+      const cleanedThreads = [...nonEmptyThreads, mostRecentEmpty];
+      setChatThreads(cleanedThreads);
+    }
+
     const threadsExist = chatThreads.length > 0;
     const currentIdIsValid = currentChatThreadId && chatThreads.some(t => t.id === currentChatThreadId);
 
@@ -404,11 +415,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const startNewChat = () => {
+    // If the current thread is already an empty "New Chat", don't create another one
     if (activeChatThread && activeChatThread.title === 'New Chat' && activeChatThread.messages.length === 0) {
         if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
             setIsHistoryPanelOpen(false);
         }
-        return; 
+        return;
     }
 
     const newThreadId = `thread_${Date.now()}`;
@@ -419,10 +431,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       createdAt: new Date().toISOString(),
       lastUpdatedAt: new Date().toISOString(),
     };
-    
+
     setChatThreads(prevThreads => updateOrAddThreadInArray(prevThreads, newThread));
     setCurrentChatThreadId(newThreadId);
-    
+
     if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
         setIsHistoryPanelOpen(false);
     }
@@ -439,7 +451,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteChatThread = (threadId: string) => {
-    const remainingThreads = chatThreads.filter(t => t.id !== threadId);    
+    const remainingThreads = chatThreads.filter(t => t.id !== threadId);
     setChatThreads(remainingThreads);
 
     if (currentChatThreadId === threadId) {
