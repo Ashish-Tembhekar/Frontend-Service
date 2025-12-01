@@ -75,11 +75,13 @@ export function StreamingAudioPlayer({
 
   const handlePlay = () => {
     if (!text) return;
-    
+
     if (isPlaying) {
       stopAudio();
     } else {
-      requestTTS(text, language);
+      // Generate a temporary message ID for standalone player
+      const tempMessageId = `msg_standalone_${Date.now()}`;
+      requestTTS(text, tempMessageId, language);
     }
   };
 
@@ -173,11 +175,13 @@ export function InlineStreamingAudioPlayer({
 
   const handleToggle = () => {
     if (!text) return;
-    
+
     if (isPlaying) {
       stopAudio();
     } else {
-      requestTTS(text, language);
+      // Generate a temporary message ID for inline player
+      const tempMessageId = `msg_inline_${Date.now()}`;
+      requestTTS(text, tempMessageId, language);
     }
   };
 

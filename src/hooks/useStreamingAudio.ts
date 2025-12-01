@@ -2,6 +2,9 @@
 
 import { useRef, useCallback, useEffect, useState } from 'react';
 import { appConfig } from '../lib/config';
+import { TTSUsageData } from '../services/usageLogger';
+import { createAudioUrl, revokeAudioUrl, mergeWavChunks } from '../lib/audioUtils';
+import { saveAudio } from '../services/audioStorage';
 
 // + UPDATED: Interface to match the direct response from the Chatterbox server
 interface ChatterboxAudioChunk {
@@ -18,11 +21,16 @@ interface StreamingAudioState {
   isConnected: boolean;
   isStreaming: boolean;
   isPlaying: boolean;
+  isPaused: boolean; // NEW: Track if user has paused during streaming
   currentChunk: number;
   totalChunks: number;
   error: string | null;
   isLoading: boolean; // Loading icon state (request sent, waiting for first chunk)
   progressPercent: number; // Progress bar percentage (0-100)
+  ttsUsage: TTSUsageData | null; // TTS usage data from the service
+  currentMessageId: string | null; // The message ID for which audio is being generated
+  mergedAudioUrl: string | null; // The URL of the merged audio blob once complete
+  streamingPlaybackPosition: number; // NEW: Cumulative playback position in seconds during streaming
 }
 
 interface TTSParameters {
@@ -31,29 +39,58 @@ interface TTSParameters {
   reference_audio_file?: string | null;
 }
 
-export function useStreamingAudio() {
+// Callback type for when audio merging is complete
+export type OnAudioCompleteCallback = (messageId: string, audioUrl: string) => void;
+
+export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
   const wsRef = useRef<WebSocket | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackQueueRef = useRef<ChatterboxAudioChunk[]>([]);
   const isPlayingRef = useRef(false);
+  const isPausedRef = useRef(false); // NEW: Track paused state in ref for immediate access
   const isConnectingRef = useRef(false);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastHeartbeatRef = useRef<number>(Date.now());
 
+  // + NEW: Refs for audio accumulation and message tracking
+  const audioBufferRef = useRef<string[]>([]); // Accumulated base64 audio chunks
+  const currentMessageIdRef = useRef<string | null>(null); // Current message ID for TTS
+  const onAudioCompleteRef = useRef<OnAudioCompleteCallback | undefined>(onAudioComplete);
+
+  // + NEW: Refs for tracking playback position during streaming
+  const completedChunksDurationRef = useRef<number>(0); // Total duration of all finished chunks
+  const currentChunkStartTimeRef = useRef<number | null>(null); // When current chunk started playing
+
+  // Keep the callback ref updated
+  useEffect(() => {
+    onAudioCompleteRef.current = onAudioComplete;
+  }, [onAudioComplete]);
+
   const [state, setState] = useState<StreamingAudioState>({
     isConnected: false,
     isStreaming: false,
     isPlaying: false,
+    isPaused: false, // NEW: Initial paused state
     currentChunk: 0,
     totalChunks: 0,
     error: null,
     isLoading: false,
-    progressPercent: 0
+    progressPercent: 0,
+    ttsUsage: null,
+    currentMessageId: null,
+    mergedAudioUrl: null,
+    streamingPlaybackPosition: 0, // NEW: Start at 0 seconds
   });
 
   const playNextChunk = useCallback(() => {
+    // NEW: Don't play if paused - chunks will accumulate in queue
+    if (isPausedRef.current) {
+      console.log('🎵 Playback paused, not playing next chunk');
+      return;
+    }
+
     if (playbackQueueRef.current.length === 0) {
       // End of queue
       isPlayingRef.current = false;
@@ -69,7 +106,26 @@ export function useStreamingAudio() {
       const audio = new Audio(audioUrl);
       currentAudioRef.current = audio;
 
+      // NEW: Track when this chunk starts playing
+      currentChunkStartTimeRef.current = Date.now();
+
+      // NEW: Track chunk duration when metadata is loaded
+      audio.onloadedmetadata = () => {
+        console.log(`🎵 Chunk ${chunk.chunk_index + 1} duration: ${audio.duration}s`);
+      };
+
       audio.onended = () => {
+        // NEW: Add this chunk's duration to cumulative total
+        const chunkDuration = audio.duration || 0;
+        completedChunksDurationRef.current += chunkDuration;
+        currentChunkStartTimeRef.current = null;
+
+        // Update state with new playback position
+        setState(prev => ({
+          ...prev,
+          streamingPlaybackPosition: completedChunksDurationRef.current,
+        }));
+
         currentAudioRef.current = null;
         // Update progress as chunks finish playing - calculate progress using prev state
         setState(prev => {
@@ -79,7 +135,10 @@ export function useStreamingAudio() {
           return { ...prev, progressPercent };
         });
         // Use a small timeout to prevent race conditions between chunks
-        setTimeout(playNextChunk, 240);
+        // Only continue if not paused
+        if (!isPausedRef.current) {
+          setTimeout(playNextChunk, 240);
+        }
       };
 
       audio.onerror = (error) => {
@@ -140,6 +199,7 @@ export function useStreamingAudio() {
         console.log(`🎵 Received audio chunk ${message.chunk_index + 1}/${message.total_chunks}`);
         console.log(`🎵 Queue length before push: ${playbackQueueRef.current.length}`);
         console.log(`🎵 Currently playing: ${isPlayingRef.current}`);
+        console.log(`🎵 Paused: ${isPausedRef.current}`);
         console.log(`🎵 WebSocket readyState: ${wsRef.current?.readyState}`);
 
         const chunkData: ChatterboxAudioChunk = {
@@ -152,21 +212,66 @@ export function useStreamingAudio() {
           language: message.language,
         };
 
+        // + Accumulate chunk for later merging
+        audioBufferRef.current.push(message.audio_data);
+
+        // Add to playback queue
         playbackQueueRef.current.push(chunkData);
         console.log(`🎵 Queue length after push: ${playbackQueueRef.current.length}`);
+
         // Hide loading icon once first chunk arrives, show progress bar
         setState(prev => ({ ...prev, isStreaming: true, currentChunk: message.chunk_index + 1, isLoading: false }));
 
-        if (!isPlayingRef.current) {
+        // Only start playback if not paused and not already playing
+        if (!isPlayingRef.current && !isPausedRef.current) {
           console.log(`🎵 Starting playback for first chunk`);
           isPlayingRef.current = true;
           setState(prev => ({ ...prev, isPlaying: true }));
           playNextChunk();
+        } else if (isPausedRef.current) {
+          console.log('🎵 Chunk queued while paused, waiting for resume');
         }
+
+        // + Check if this is the final chunk - if so, merge all audio and save to IndexedDB
+        if (message.is_final) {
+          console.log('🎵 Final chunk received, merging audio...');
+          try {
+            // Merge chunks into a blob
+            const mergedBlob = mergeWavChunks(audioBufferRef.current);
+            const mergedUrl = URL.createObjectURL(mergedBlob);
+            const messageId = currentMessageIdRef.current;
+
+            console.log(`🎵 Audio merged successfully for message: ${messageId}`);
+            setState(prev => ({ ...prev, mergedAudioUrl: mergedUrl }));
+
+            // Save to IndexedDB for persistence
+            if (messageId) {
+              saveAudio(messageId, mergedBlob).then(() => {
+                console.log(`🎵 Audio saved to IndexedDB for message: ${messageId}`);
+              }).catch(err => {
+                console.error('🎵 Failed to save audio to IndexedDB:', err);
+              });
+            }
+
+            // Call the callback if provided
+            if (messageId && onAudioCompleteRef.current) {
+              onAudioCompleteRef.current(messageId, mergedUrl);
+            }
+          } catch (error) {
+            console.error('🎵 Error merging audio chunks:', error);
+          }
+        }
+        break;
+
+      case 'usage':
+        console.log('🎵 Received TTS usage data:', message.usage);
+        setState(prev => ({ ...prev, ttsUsage: message.usage }));
         break;
 
       case 'error':
         console.error('🎵 TTS service error:', message.error);
+        // Clear the audio buffer on error
+        audioBufferRef.current = [];
         setState(prev => ({ ...prev, error: message.error, isStreaming: false, isPlaying: false, isLoading: false }));
         break;
 
@@ -273,10 +378,91 @@ export function useStreamingAudio() {
     }
     playbackQueueRef.current = [];
     isPlayingRef.current = false;
-    setState(prev => ({ ...prev, isPlaying: false, isStreaming: false }));
+    isPausedRef.current = false; // Reset paused state when stopping
+    setState(prev => ({ ...prev, isPlaying: false, isStreaming: false, isPaused: false }));
   }, []);
 
-  const requestTTS = useCallback((text: string, language: string = 'en', ttsParams?: TTSParameters) => {
+  // NEW: Pause the audio playback (chunks continue to accumulate in queue)
+  const pauseAudio = useCallback(() => {
+    console.log('🎵 Pausing audio playback');
+    isPausedRef.current = true;
+
+    // Calculate current playback position including current chunk progress
+    let currentPosition = completedChunksDurationRef.current;
+    if (currentAudioRef.current && !isNaN(currentAudioRef.current.currentTime)) {
+      currentPosition += currentAudioRef.current.currentTime;
+    }
+
+    // Pause current audio if playing
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+    }
+
+    isPlayingRef.current = false;
+    setState(prev => ({
+      ...prev,
+      isPlaying: false,
+      isPaused: true,
+      streamingPlaybackPosition: currentPosition, // Update with current position
+    }));
+  }, []);
+
+  // NEW: Resume the audio playback (play accumulated chunks)
+  const resumeAudio = useCallback(() => {
+    console.log('🎵 Resuming audio playback');
+    isPausedRef.current = false;
+    setState(prev => ({ ...prev, isPaused: false }));
+
+    // If we have a current audio element that was paused, resume it
+    if (currentAudioRef.current && currentAudioRef.current.paused) {
+      currentAudioRef.current.play().then(() => {
+        isPlayingRef.current = true;
+        setState(prev => ({ ...prev, isPlaying: true }));
+      }).catch(error => {
+        console.error('🎵 Error resuming audio:', error);
+        // If resume fails, try playing next chunk
+        currentAudioRef.current = null;
+        if (playbackQueueRef.current.length > 0) {
+          isPlayingRef.current = true;
+          setState(prev => ({ ...prev, isPlaying: true }));
+          playNextChunk();
+        }
+      });
+    } else if (playbackQueueRef.current.length > 0) {
+      // No current audio, but we have queued chunks - start playing them
+      isPlayingRef.current = true;
+      setState(prev => ({ ...prev, isPlaying: true }));
+      playNextChunk();
+    }
+  }, [playNextChunk]);
+
+  // NEW: Stop chunk playback when transitioning to combined audio (prevents overlap)
+  const stopChunkPlayback = useCallback(() => {
+    console.log('🎵 Stopping chunk playback for transition to combined audio');
+
+    // Stop current chunk audio
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+
+    // Clear the playback queue to prevent any more chunks from playing
+    playbackQueueRef.current = [];
+
+    // Update state but keep streaming flags since we're just transitioning
+    isPlayingRef.current = false;
+    isPausedRef.current = false;
+    setState(prev => ({
+      ...prev,
+      isPlaying: false,
+      isPaused: false,
+      isStreaming: false, // No longer streaming chunks
+    }));
+  }, []);
+
+  // + UPDATED: requestTTS now accepts messageId for tracking which message the audio belongs to
+  const requestTTS = useCallback((text: string, messageId: string, language: string = 'en', ttsParams?: TTSParameters) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setState(prev => ({ ...prev, error: 'TTS service not connected', isLoading: false }));
       // Attempt to reconnect if not connected
@@ -287,16 +473,37 @@ export function useStreamingAudio() {
     stopAudio();
     playbackQueueRef.current = [];
 
+    // + Reset the audio buffer and paused state for the new request
+    audioBufferRef.current = [];
+    currentMessageIdRef.current = messageId;
+    isPausedRef.current = false; // Reset paused state for new request
+
+    // + Reset playback position tracking for new request
+    completedChunksDurationRef.current = 0;
+    currentChunkStartTimeRef.current = null;
+
+    // + Revoke any previous merged audio URL to prevent memory leaks
+    setState(prev => {
+      if (prev.mergedAudioUrl) {
+        revokeAudioUrl(prev.mergedAudioUrl);
+      }
+      return prev;
+    });
+
     // Show loading icon immediately when request is sent
     setState(prev => ({
       ...prev,
       isStreaming: true,
       isPlaying: false,
+      isPaused: false, // Reset paused state
       currentChunk: 0,
       totalChunks: 0,
       error: null,
       isLoading: true,
-      progressPercent: 0
+      progressPercent: 0,
+      currentMessageId: messageId,
+      mergedAudioUrl: null,
+      streamingPlaybackPosition: 0, // Reset playback position
     }));
 
     // + UPDATED: Send the request with TTS parameters
@@ -314,6 +521,16 @@ export function useStreamingAudio() {
   const disconnect = useCallback(() => {
     stopAudio();
     stopHeartbeat();
+
+    // + Clear audio buffer and paused state
+    audioBufferRef.current = [];
+    currentMessageIdRef.current = null;
+    isPausedRef.current = false;
+
+    // + Reset playback position tracking
+    completedChunksDurationRef.current = 0;
+    currentChunkStartTimeRef.current = null;
+
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -327,15 +544,27 @@ export function useStreamingAudio() {
       connectionTimeoutRef.current = null;
     }
     isConnectingRef.current = false;
-    setState({
-      isConnected: false,
-      isStreaming: false,
-      isPlaying: false,
-      currentChunk: 0,
-      totalChunks: 0,
-      error: null,
-      isLoading: false,
-      progressPercent: 0
+
+    // + Revoke merged audio URL before resetting state
+    setState(prev => {
+      if (prev.mergedAudioUrl) {
+        revokeAudioUrl(prev.mergedAudioUrl);
+      }
+      return {
+        isConnected: false,
+        isStreaming: false,
+        isPlaying: false,
+        isPaused: false,
+        currentChunk: 0,
+        totalChunks: 0,
+        error: null,
+        isLoading: false,
+        progressPercent: 0,
+        ttsUsage: null,
+        currentMessageId: null,
+        mergedAudioUrl: null,
+        streamingPlaybackPosition: 0, // Reset playback position
+      };
     });
   }, [stopAudio, stopHeartbeat]);
 
@@ -350,6 +579,15 @@ export function useStreamingAudio() {
       }
       playbackQueueRef.current = [];
       isPlayingRef.current = false;
+      isPausedRef.current = false;
+
+      // + Clear audio buffer on unmount
+      audioBufferRef.current = [];
+      currentMessageIdRef.current = null;
+
+      // + Reset playback position tracking on unmount
+      completedChunksDurationRef.current = 0;
+      currentChunkStartTimeRef.current = null;
 
       // Stop heartbeat
       if (heartbeatIntervalRef.current) {
@@ -373,5 +611,5 @@ export function useStreamingAudio() {
     };
   }, []); // Empty dependency array - only run on mount/unmount
 
-  return { ...state, connect, disconnect, requestTTS, stopAudio };
+  return { ...state, connect, disconnect, requestTTS, stopAudio, pauseAudio, resumeAudio, stopChunkPlayback };
 }

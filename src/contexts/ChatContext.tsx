@@ -10,8 +10,9 @@ import { useToast } from '../hooks/use-toast';
 import { validateFileSize } from '../lib/utils';
 import { useStreamingAudio } from '../hooks/useStreamingAudio';
 import { useAuth } from './AuthContext';
-import { logUsageToFirestore } from '../services/usageLogger';
+import { logUsageToFirestore, logTTSUsageToFirestore, type TTSUsageData } from '../services/usageLogger';
 import { db } from '../lib/firebase/config';
+import { getAudio } from '../services/audioStorage';
 
 interface ChatContextType {
   chatThreads: ChatThread[];
@@ -35,10 +36,15 @@ interface ChatContextType {
   ttsIsLoading: boolean;
   ttsIsStreaming: boolean;
   ttsIsPlaying: boolean;
+  ttsIsPaused: boolean; // NEW: Track paused state during streaming
   ttsProgressPercent: number;
   ttsCurrentChunk: number;
   ttsTotalChunks: number;
   ttsError: string | null;
+  ttsUsage: TTSUsageData | null;
+  ttsStreamingPlaybackPosition: number; // NEW: Cumulative playback position during streaming
+  // + Add audio URL tracking for messages
+  currentTtsMessageId: string | null;
   // + Add role and system prompt properties
   chatbotRole: string;
   setChatbotRole: (role: string) => void;
@@ -56,7 +62,13 @@ interface ChatContextType {
   setIsHistoryPanelOpen: (isOpen: boolean) => void;
   getThreadTitle: (threadId: string) => string;
   stopCurrentAudio: () => void;
-  requestTTS: (text: string, language?: string) => void;
+  pauseStreamingAudio: () => void; // NEW: Pause streaming playback
+  resumeStreamingAudio: () => void; // NEW: Resume streaming playback
+  stopChunkPlayback: () => void; // NEW: Stop chunk playback when transitioning to combined audio
+  requestTTS: (text: string, messageId: string, language?: string) => void;
+  setAudioForMessage: (messageId: string, audioUrl: string) => void;
+  setAudioGeneratingForMessage: (messageId: string, isGenerating: boolean) => void;
+  restoreAudioFromCache: (messageId: string) => Promise<void>; // NEW: Restore audio from IndexedDB
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -80,8 +92,23 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoadingResponse, setIsLoadingResponse] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
   const { toast } = useToast();
-  const streamingAudio = useStreamingAudio();
   const { user } = useAuth(); // Get authenticated user for usage tracking
+
+  // + Callback for when audio merging is complete - updates the message with the audio URL
+  const handleAudioComplete = useCallback((messageId: string, audioUrl: string) => {
+    console.log(`🎵 Audio complete for message ${messageId}, URL: ${audioUrl.substring(0, 50)}...`);
+    setMessages(prev => {
+      const updatedMessages = prev.map(m =>
+        m.id === messageId
+          ? { ...m, audioUrl, isAudioGenerating: false }
+          : m
+      );
+      return updatedMessages;
+    });
+  }, []);
+
+  // + Pass the callback to useStreamingAudio
+  const streamingAudio = useStreamingAudio(handleAudioComplete);
 
   // + Add state for the audio response toggle, persisted in local storage
   const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
@@ -130,6 +157,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Monitor TTS usage and log to Firestore when available
+  useEffect(() => {
+    if (streamingAudio.ttsUsage && user?.uid) {
+      logTTSUsageToFirestore(user.uid, streamingAudio.ttsUsage);
+    }
+  }, [streamingAudio.ttsUsage, user?.uid]);
+
   const updateMessagesInCurrentThread = (newMessages: Message[], title?: string) => {
     if (!currentChatThreadId) return;
     const messagesForStorage = newMessages.map(({ audioData, ...message }) => message);
@@ -137,7 +171,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setChatThreads(prevThreads => {
       const threadIndex = prevThreads.findIndex(t => t.id === currentChatThreadId);
       if (threadIndex === -1) return prevThreads;
-      
+
       const updatedThread = {
         ...prevThreads[threadIndex],
         messages: messagesForStorage,
@@ -150,6 +184,31 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return newThreads.sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime());
     });
   };
+
+  // + Add function to set audio URL for a specific message
+  const setAudioForMessage = useCallback((messageId: string, audioUrl: string) => {
+    setMessages(prev => {
+      const updatedMessages = prev.map(m =>
+        m.id === messageId
+          ? { ...m, audioUrl, isAudioGenerating: false }
+          : m
+      );
+      // Note: We don't persist audioUrl to storage as blobs are session-only
+      return updatedMessages;
+    });
+  }, []);
+
+  // + Add function to set audio generating state for a specific message
+  const setAudioGeneratingForMessage = useCallback((messageId: string, isGenerating: boolean) => {
+    setMessages(prev => {
+      const updatedMessages = prev.map(m =>
+        m.id === messageId
+          ? { ...m, isAudioGenerating: isGenerating }
+          : m
+      );
+      return updatedMessages;
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -275,7 +334,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
     const newTitle = isNewThread ? (userMessage.content.substring(0, 30) + (userMessage.content.length > 30 ? '...' : '')) : undefined;
 
-    const assistantMessageForState = { ...assistantMessage, audioData: null };
+    // Mark assistant message as generating audio if audio is enabled
+    const assistantMessageForState = {
+      ...assistantMessage,
+      audioData: null,
+      isAudioGenerating: isAudioResponseEnabled
+    };
 
     setMessages(prevMessages => {
       const updatedMessages = [...prevMessages, userMessage, assistantMessageForState];
@@ -283,14 +347,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return updatedMessages;
     });
 
-    // ~ UPDATED: Only request TTS if the audio toggle is enabled
+    // ~ UPDATED: Only request TTS if the audio toggle is enabled, pass messageId
     if (isAudioResponseEnabled) {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = assistantMessage.content;
       const textContent = tempDiv.textContent || tempDiv.innerText || '';
       if (textContent.trim()) {
         const lang = (assistantMessage as any).detected_language || 'en';
-        streamingAudio.requestTTS(textContent, lang, {
+        streamingAudio.requestTTS(textContent, assistantMessage.id, lang, {
           exaggeration: ttsExaggeration,
           cfg_weight: ttsCfgWeight,
           reference_audio_file: ttsRefAudioFile
@@ -363,24 +427,25 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading: false,
         timestamp: new Date().toISOString(),
         audioData: null,
+        isAudioGenerating: isAudioResponseEnabled, // Mark as generating if audio is enabled
         ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
         ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
       };
-      
+
       setMessages(prev => {
         const finalMessages = prev.map(m => m.id === assistantPlaceholderMessage.id ? finalAssistantMessage : m);
         updateMessagesInCurrentThread(finalMessages, newTitle);
         return finalMessages;
       });
 
-      // ~ UPDATED: Check the toggle state before initiating TTS for any message type
+      // ~ UPDATED: Check the toggle state before initiating TTS, pass messageId
       if (isAudioResponseEnabled) {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = response.answer;
         const textContent = tempDiv.textContent || tempDiv.innerText || '';
 
         if (textContent.trim()) {
-          streamingAudio.requestTTS(textContent, response.detected_language || 'en', {
+          streamingAudio.requestTTS(textContent, assistantPlaceholderMessage.id, response.detected_language || 'en', {
             exaggeration: ttsExaggeration,
             cfg_weight: ttsCfgWeight,
             reference_audio_file: ttsRefAudioFile
@@ -440,15 +505,41 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const loadChatThread = (threadId: string) => {
+  // NEW: Restore audio from IndexedDB for a specific message
+  const restoreAudioFromCache = useCallback(async (messageId: string) => {
+    try {
+      const blob = await getAudio(messageId);
+      if (blob) {
+        const audioUrl = URL.createObjectURL(blob);
+        setMessages(prev => prev.map(m =>
+          m.id === messageId
+            ? { ...m, audioUrl, isAudioGenerating: false }
+            : m
+        ));
+        console.log(`🎵 Restored audio from cache for message: ${messageId}`);
+      }
+    } catch (error) {
+      console.error(`Failed to restore audio for message ${messageId}:`, error);
+    }
+  }, []);
+
+  const loadChatThread = useCallback(async (threadId: string) => {
     const thread = chatThreads.find(t => t.id === threadId);
     if (thread) {
       setCurrentChatThreadId(threadId);
       if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
         setIsHistoryPanelOpen(false);
       }
+
+      // Restore audio for assistant messages from IndexedDB
+      for (const message of thread.messages) {
+        if (message.role === 'assistant' && !message.audioUrl) {
+          // Try to restore from cache (non-blocking)
+          restoreAudioFromCache(message.id);
+        }
+      }
     }
-  };
+  }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, restoreAudioFromCache]);
 
   const deleteChatThread = (threadId: string) => {
     const remainingThreads = chatThreads.filter(t => t.id !== threadId);
@@ -481,13 +572,17 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsHistoryPanelOpen(prev => !prev);
   };
 
-  const requestTTS = useCallback((text: string, language: string = 'en') => {
-    streamingAudio.requestTTS(text, language, {
+  // + Updated requestTTS to accept messageId and set generating state
+  const requestTTS = useCallback((text: string, messageId: string, language: string = 'en') => {
+    // Mark the message as generating audio
+    setAudioGeneratingForMessage(messageId, true);
+
+    streamingAudio.requestTTS(text, messageId, language, {
       exaggeration: ttsExaggeration,
       cfg_weight: ttsCfgWeight,
       reference_audio_file: ttsRefAudioFile
     });
-  }, [streamingAudio, ttsExaggeration, ttsCfgWeight, ttsRefAudioFile]);
+  }, [streamingAudio, ttsExaggeration, ttsCfgWeight, ttsRefAudioFile, setAudioGeneratingForMessage]);
 
   return (
     <ChatContext.Provider value={{
@@ -510,10 +605,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ttsIsLoading: streamingAudio.isLoading,
       ttsIsStreaming: streamingAudio.isStreaming,
       ttsIsPlaying: streamingAudio.isPlaying,
+      ttsIsPaused: streamingAudio.isPaused, // NEW: Expose paused state
       ttsProgressPercent: streamingAudio.progressPercent,
       ttsCurrentChunk: streamingAudio.currentChunk,
       ttsTotalChunks: streamingAudio.totalChunks,
       ttsError: streamingAudio.error,
+      ttsUsage: streamingAudio.ttsUsage,
+      ttsStreamingPlaybackPosition: streamingAudio.streamingPlaybackPosition, // NEW: Expose playback position
+      // + Expose current TTS message ID
+      currentTtsMessageId: streamingAudio.currentMessageId,
       // + Expose role and system prompt
       chatbotRole,
       setChatbotRole,
@@ -531,7 +631,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsHistoryPanelOpen,
       getThreadTitle,
       stopCurrentAudio,
+      pauseStreamingAudio: streamingAudio.pauseAudio, // NEW: Expose pause function
+      resumeStreamingAudio: streamingAudio.resumeAudio, // NEW: Expose resume function
+      stopChunkPlayback: streamingAudio.stopChunkPlayback, // NEW: Expose stop chunk playback function
       requestTTS,
+      setAudioForMessage,
+      setAudioGeneratingForMessage,
+      restoreAudioFromCache, // NEW: Expose restore function
     }}>
       {children}
     </ChatContext.Provider>

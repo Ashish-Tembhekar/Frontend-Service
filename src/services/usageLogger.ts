@@ -44,6 +44,21 @@ export interface UsageSummary {
 }
 
 /**
+ * TTS usage data from TTS service
+ */
+export interface TTSUsageData {
+  timestamp: string;
+  device: string;
+  text_length: number;
+  estimated_tokens: number;
+  num_chunks: number;
+  gpu_memory_used_mb: number;
+  cpu_memory_used_mb: number;
+  elapsed_time_seconds: number;
+  tokens_per_second: number;
+}
+
+/**
  * User usage document structure in Firestore
  */
 export interface UserUsageDocument {
@@ -56,6 +71,13 @@ export interface UserUsageDocument {
   lastUpdated: Timestamp;
   createdAt: Timestamp;
   recentUsage: UsageEntry[];
+  // TTS usage fields
+  ttsUsageCalls?: number;
+  ttsTotalTokens?: number;
+  ttsTotalGpuMemoryMb?: number;
+  ttsTotalCpuMemoryMb?: number;
+  ttsTotalElapsedSeconds?: number;
+  recentTtsUsage?: TTSUsageEntry[];
 }
 
 /**
@@ -69,6 +91,21 @@ export interface UsageEntry {
   totalTokens: number;
   costUsd: number;
   calls: number;
+}
+
+/**
+ * Individual TTS usage entry
+ */
+export interface TTSUsageEntry {
+  timestamp: Timestamp;
+  textLength: number;
+  estimatedTokens: number;
+  numChunks: number;
+  gpuMemoryUsedMb: number;
+  cpuMemoryUsedMb: number;
+  elapsedTimeSeconds: number;
+  tokensPerSecond: number;
+  device: string;
 }
 
 /**
@@ -144,8 +181,82 @@ export async function logUsageToFirestore(
 }
 
 /**
+ * Log TTS usage data to Firestore
+ *
+ * @param userId - The Firebase user ID
+ * @param ttsUsage - TTS usage data from the TTS service
+ */
+export async function logTTSUsageToFirestore(
+  userId: string,
+  ttsUsage: TTSUsageData
+): Promise<void> {
+  if (!userId || !ttsUsage) {
+    console.warn('Cannot log TTS usage: missing userId or ttsUsage');
+    return;
+  }
+
+  try {
+    const usageDocRef = doc(db, 'usage', userId);
+    const usageDoc = await getDoc(usageDocRef);
+
+    const ttsUsageEntry: TTSUsageEntry = {
+      timestamp: Timestamp.now(),
+      textLength: ttsUsage.text_length,
+      estimatedTokens: ttsUsage.estimated_tokens,
+      numChunks: ttsUsage.num_chunks,
+      gpuMemoryUsedMb: ttsUsage.gpu_memory_used_mb,
+      cpuMemoryUsedMb: ttsUsage.cpu_memory_used_mb,
+      elapsedTimeSeconds: ttsUsage.elapsed_time_seconds,
+      tokensPerSecond: ttsUsage.tokens_per_second,
+      device: ttsUsage.device,
+    };
+
+    if (usageDoc.exists()) {
+      // Update existing document
+      await updateDoc(usageDocRef, {
+        ttsUsageCalls: increment(1),
+        ttsTotalTokens: increment(ttsUsage.estimated_tokens),
+        ttsTotalGpuMemoryMb: increment(ttsUsage.gpu_memory_used_mb),
+        ttsTotalCpuMemoryMb: increment(ttsUsage.cpu_memory_used_mb),
+        ttsTotalElapsedSeconds: increment(ttsUsage.elapsed_time_seconds),
+        lastUpdated: serverTimestamp(),
+        // Keep only the last 100 TTS usage entries
+        recentTtsUsage: arrayUnion(ttsUsageEntry),
+      });
+
+      console.log('✅ TTS usage data updated in Firestore for user:', userId);
+    } else {
+      // Create new document with TTS usage
+      const newUsageDoc: UserUsageDocument = {
+        userId,
+        totalCalls: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalTokens: 0,
+        totalCostUsd: 0,
+        lastUpdated: Timestamp.now(),
+        createdAt: Timestamp.now(),
+        recentUsage: [],
+        ttsUsageCalls: 1,
+        ttsTotalTokens: ttsUsage.estimated_tokens,
+        ttsTotalGpuMemoryMb: ttsUsage.gpu_memory_used_mb,
+        ttsTotalCpuMemoryMb: ttsUsage.cpu_memory_used_mb,
+        ttsTotalElapsedSeconds: ttsUsage.elapsed_time_seconds,
+        recentTtsUsage: [ttsUsageEntry],
+      };
+
+      await setDoc(usageDocRef, newUsageDoc);
+      console.log('✅ New usage document created in Firestore with TTS data for user:', userId);
+    }
+  } catch (error) {
+    console.error('❌ Error logging TTS usage to Firestore:', error);
+    // Don't throw - we don't want to break the user experience if logging fails
+  }
+}
+
+/**
  * Get user usage data from Firestore
- * 
+ *
  * @param userId - The Firebase user ID
  * @returns User usage document or null if not found
  */

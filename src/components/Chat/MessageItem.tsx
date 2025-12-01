@@ -5,7 +5,7 @@ import React, { useMemo, useState } from 'react';
 import { Bot, Loader2, User } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
-import { TTSStatusIndicator } from '../TTS/TTSStatusIndicator';
+import { AudioPlayer } from './AudioPlayer';
 import { useChat } from '../../contexts/ChatContext';
 
 interface MessageItemProps {
@@ -22,10 +22,16 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
     ttsIsLoading,
     ttsIsStreaming,
     ttsIsPlaying,
+    ttsIsPaused, // NEW: Get paused state
     ttsProgressPercent,
     ttsCurrentChunk,
     ttsTotalChunks,
-    ttsError
+    ttsError,
+    ttsStreamingPlaybackPosition, // NEW: Get streaming playback position
+    currentTtsMessageId,
+    pauseStreamingAudio, // NEW: Get pause function
+    resumeStreamingAudio, // NEW: Get resume function
+    stopChunkPlayback, // NEW: Get stop chunk playback function
   } = useChat();
 
   if (isSystem) {
@@ -149,18 +155,25 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
           })()}
         </div>
 
-        {/* TTS Status Indicator - Shows under assistant message bubble */}
-        {!isUser && isLastAssistantMessage && (
-          <div className="w-full mt-2">
-            <TTSStatusIndicator
-              isLoading={ttsIsLoading}
-              isStreaming={ttsIsStreaming}
-              isPlaying={ttsIsPlaying}
-              progressPercent={ttsProgressPercent}
-              currentChunk={ttsCurrentChunk}
-              totalChunks={ttsTotalChunks}
-              error={ttsError}
-            />
+        {/* Audio Player - Shows for assistant messages with audio or currently generating */}
+        {!isUser && (
+          <div className="w-full">
+            {/* Show AudioPlayer if this message has audio or is currently generating audio */}
+            {(message.audioUrl || message.isAudioGenerating || currentTtsMessageId === message.id) && (
+              <AudioPlayer
+                audioUrl={message.audioUrl}
+                isGenerating={message.isAudioGenerating || currentTtsMessageId === message.id}
+                isStreamingPaused={currentTtsMessageId === message.id ? ttsIsPaused : false}
+                isStreamingPlaying={currentTtsMessageId === message.id ? ttsIsPlaying : false}
+                progressPercent={currentTtsMessageId === message.id ? ttsProgressPercent : 0}
+                currentChunk={currentTtsMessageId === message.id ? ttsCurrentChunk : 0}
+                totalChunks={currentTtsMessageId === message.id ? ttsTotalChunks : 0}
+                streamingPlaybackPosition={currentTtsMessageId === message.id ? ttsStreamingPlaybackPosition : 0}
+                onPauseStreaming={currentTtsMessageId === message.id ? pauseStreamingAudio : undefined}
+                onResumeStreaming={currentTtsMessageId === message.id ? resumeStreamingAudio : undefined}
+                onStopChunkPlayback={currentTtsMessageId === message.id ? stopChunkPlayback : undefined}
+              />
+            )}
           </div>
         )}
       </div>

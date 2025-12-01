@@ -320,13 +320,16 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
         
         // REMOVED: The conditional logic for streaming vs. traditional API call.
         // We now *only* use the streaming API.
+        // Generate a message ID for the voice response TTS
+        const voiceResponseMessageId = `msg_voice_${Date.now()}`;
+
         const response = await transcribeAndAskStreamingAPI(
           audioBlob,
           conversationHistoryString,
           'auto',
           (text: string, language: string) => {
             console.log('VoiceChatFullScreen - Starting streaming TTS for:', text.substring(0, 100) + '...');
-            requestTTS(text, language);
+            requestTTS(text, voiceResponseMessageId, language);
             setIsPlayingResponse(true);
             setCurrentAssistantText(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
             startBargeInDetector();
