@@ -1,11 +1,10 @@
-// src/contexts/ChatContext.tsx
 "use client";
 
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { Message, ChatThread } from '../types/chat';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion } from '../services/apiClientNew';
+import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion, generateKokoroAudio } from '../services/apiClientNew';
 import { useToast } from '../hooks/use-toast';
 import { validateFileSize } from '../lib/utils';
 import { useStreamingAudio } from '../hooks/useStreamingAudio';
@@ -21,36 +20,51 @@ interface ChatContextType {
   messages: Message[];
   isLoadingResponse: boolean;
   isHistoryPanelOpen: boolean;
-  // + Add new state and toggle function
+  
+  // Audio settings
   isAudioResponseEnabled: boolean;
   toggleAudioResponse: () => void;
-  // + Add TTS parameters
+  
+  // TTS Settings
+  ttsProvider: 'chatterbox' | 'kokoro';
+  setTtsProvider: (provider: 'chatterbox' | 'kokoro') => void;
+  
+  // Chatterbox Params
   ttsExaggeration: number;
   setTtsExaggeration: (value: number) => void;
   ttsCfgWeight: number;
   setTtsCfgWeight: (value: number) => void;
   ttsRefAudioFile: string | null;
   setTtsRefAudioFile: (filename: string | null) => void;
-  // + Add TTS status properties
+  
+  // Kokoro Params
+  kokoroVoice: string;
+  setKokoroVoice: (voice: string) => void;
+  kokoroSpeed: number;
+  setKokoroSpeed: (speed: number) => void;
+
+  // TTS Status
   ttsIsConnected: boolean;
   ttsIsLoading: boolean;
   ttsIsStreaming: boolean;
   ttsIsPlaying: boolean;
-  ttsIsPaused: boolean; // NEW: Track paused state during streaming
+  ttsIsPaused: boolean;
   ttsProgressPercent: number;
   ttsCurrentChunk: number;
   ttsTotalChunks: number;
   ttsError: string | null;
   ttsUsage: TTSUsageData | null;
-  ttsStreamingPlaybackPosition: number; // NEW: Cumulative playback position during streaming
-  // + Add audio URL tracking for messages
+  ttsStreamingPlaybackPosition: number;
   currentTtsMessageId: string | null;
-  // + Add role and system prompt properties
+
+  // Role config
   chatbotRole: string;
   setChatbotRole: (role: string) => void;
   systemPrompt: string;
   setSystemPrompt: (prompt: string) => void;
   isLoadingRoleConfig: boolean;
+
+  // Actions
   sendMessage: (userInput: string, originalText?: string, isVoiceMessage?: boolean, detectedLang?: string) => Promise<void>;
   addProcessedMessages: (userMessage: Message, assistantMessage: Message) => void;
   uploadFile: (file: File) => Promise<void>;
@@ -62,13 +76,13 @@ interface ChatContextType {
   setIsHistoryPanelOpen: (isOpen: boolean) => void;
   getThreadTitle: (threadId: string) => string;
   stopCurrentAudio: () => void;
-  pauseStreamingAudio: () => void; // NEW: Pause streaming playback
-  resumeStreamingAudio: () => void; // NEW: Resume streaming playback
-  stopChunkPlayback: () => void; // NEW: Stop chunk playback when transitioning to combined audio
+  pauseStreamingAudio: () => void;
+  resumeStreamingAudio: () => void;
+  stopChunkPlayback: () => void;
   requestTTS: (text: string, messageId: string, language?: string) => void;
   setAudioForMessage: (messageId: string, audioUrl: string) => void;
   setAudioGeneratingForMessage: (messageId: string, isGenerating: boolean) => void;
-  restoreAudioFromCache: (messageId: string) => Promise<void>; // NEW: Restore audio from IndexedDB
+  restoreAudioFromCache: (messageId: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextType | undefined>(undefined);
@@ -92,9 +106,20 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isLoadingResponse, setIsLoadingResponse] = useState(false);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
   const { toast } = useToast();
-  const { user } = useAuth(); // Get authenticated user for usage tracking
+  const { user } = useAuth();
 
-  // + Callback for when audio merging is complete - updates the message with the audio URL
+  // TTS Provider State
+  const [ttsProvider, setTtsProvider] = useLocalStorage<'chatterbox' | 'kokoro'>('nexus_tts_provider_v1', 'chatterbox');
+
+  // Chatterbox Params
+  const [ttsExaggeration, setTtsExaggeration] = useLocalStorage('nexus_tts_exaggeration_v1', 0.5);
+  const [ttsCfgWeight, setTtsCfgWeight] = useLocalStorage('nexus_tts_cfg_weight_v1', 0.5);
+  const [ttsRefAudioFile, setTtsRefAudioFile] = useLocalStorage<string | null>('nexus_tts_ref_audio_file_v1', null);
+
+  // Kokoro Params
+  const [kokoroVoice, setKokoroVoice] = useLocalStorage('nexus_kokoro_voice_v1', 'af_heart');
+  const [kokoroSpeed, setKokoroSpeed] = useLocalStorage('nexus_kokoro_speed_v1', 1.0);
+
   const handleAudioComplete = useCallback((messageId: string, audioUrl: string) => {
     console.log(`🎵 Audio complete for message ${messageId}, URL: ${audioUrl.substring(0, 50)}...`);
     setMessages(prev => {
@@ -107,33 +132,22 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, []);
 
-  // + Pass the callback to useStreamingAudio
   const streamingAudio = useStreamingAudio(handleAudioComplete);
-
-  // + Add state for the audio response toggle, persisted in local storage
   const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
 
-  // + Add TTS parameters, persisted in local storage
-  const [ttsExaggeration, setTtsExaggeration] = useLocalStorage('nexus_tts_exaggeration_v1', 0.5);
-  const [ttsCfgWeight, setTtsCfgWeight] = useLocalStorage('nexus_tts_cfg_weight_v1', 0.5);
-  const [ttsRefAudioFile, setTtsRefAudioFile] = useLocalStorage<string | null>('nexus_tts_ref_audio_file_v1', null);
-
-  // + Add role and system prompt state
+  // Role config
   const [chatbotRole, setChatbotRole] = useLocalStorage('nexus_chatbot_role_v1', 'Helpful Document Assistant');
   const [systemPrompt, setSystemPrompt] = useLocalStorage('nexus_system_prompt_v1', 'You are a helpful document assistant. Provide clear, accurate, and concise answers based on the provided documents.');
   const [isLoadingRoleConfig, setIsLoadingRoleConfig] = useState(false);
 
-  // Load role configuration from Firestore on mount
   useEffect(() => {
     const loadRoleConfig = async () => {
       if (!user?.uid) return;
-
       try {
         setIsLoadingRoleConfig(true);
-        const { doc, getDoc, collection } = await import('firebase/firestore');
+        const { doc, getDoc } = await import('firebase/firestore');
         const docRef = doc(db, 'users', user.uid, 'config', 'chatbot');
         const docSnap = await getDoc(docRef);
-
         if (docSnap.exists()) {
           const data = docSnap.data();
           if (data.role) setChatbotRole(data.role);
@@ -145,7 +159,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsLoadingRoleConfig(false);
       }
     };
-
     loadRoleConfig();
   }, [user?.uid]);
 
@@ -157,7 +170,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Monitor TTS usage and log to Firestore when available
   useEffect(() => {
     if (streamingAudio.ttsUsage && user?.uid) {
       logTTSUsageToFirestore(user.uid, streamingAudio.ttsUsage);
@@ -185,28 +197,23 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
-  // + Add function to set audio URL for a specific message
   const setAudioForMessage = useCallback((messageId: string, audioUrl: string) => {
     setMessages(prev => {
-      const updatedMessages = prev.map(m =>
+      return prev.map(m =>
         m.id === messageId
           ? { ...m, audioUrl, isAudioGenerating: false }
           : m
       );
-      // Note: We don't persist audioUrl to storage as blobs are session-only
-      return updatedMessages;
     });
   }, []);
 
-  // + Add function to set audio generating state for a specific message
   const setAudioGeneratingForMessage = useCallback((messageId: string, isGenerating: boolean) => {
     setMessages(prev => {
-      const updatedMessages = prev.map(m =>
+      return prev.map(m =>
         m.id === messageId
           ? { ...m, isAudioGenerating: isGenerating }
           : m
       );
-      return updatedMessages;
     });
   }, []);
 
@@ -217,15 +224,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsHistoryPanelOpen(window.innerWidth >= 768);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
 
   useEffect(() => {
-    // Remove duplicate empty threads - keep only one empty "New Chat" thread
     const emptyThreads = chatThreads.filter(t => t.messages.length === 0 && t.title === 'New Chat');
     const nonEmptyThreads = chatThreads.filter(t => t.messages.length > 0);
 
-    // If there are multiple empty threads, keep only the most recent one
     if (emptyThreads.length > 1) {
       const mostRecentEmpty = [...emptyThreads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
       const cleanedThreads = [...nonEmptyThreads, mostRecentEmpty];
@@ -243,9 +247,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } else if (!currentChatThreadId && !threadsExist) {
         startNewChat();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatThreads, currentChatThreadId]);
-
 
   useEffect(() => {
     if (currentChatThreadId) {
@@ -316,11 +318,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     streamingAudio.stopAudio();
   }, [streamingAudio]);
 
-  // + Add a function to toggle the audio response setting
   const toggleAudioResponse = useCallback(() => {
     setIsAudioResponseEnabled(prev => {
       const newState = !prev;
-      // If turning audio off, stop any currently playing audio
       if (!newState) {
         stopCurrentAudio();
       }
@@ -328,13 +328,63 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   }, [setIsAudioResponseEnabled, stopCurrentAudio]);
 
+  // Helper to handle the actual API calls for TTS based on provider
+  const handleTTSGeneration = async (text: string, messageId: string, lang: string) => {
+    if (!text.trim()) return;
+
+    if (ttsProvider === 'kokoro') {
+        // Kokoro Logic
+        try {
+            // Check language support for Kokoro
+            const supportedLangs = ['en', 'es', 'fr', 'hi', 'it', 'ja', 'pt', 'zh']; 
+            const langPrefix = lang.toLowerCase().split('-')[0];
+            
+            if (!supportedLangs.includes(langPrefix)) {
+                toast({
+                    title: "Language Not Supported",
+                    description: `Kokoro doesn't support '${lang}'. Switching to Chatterbox recommended.`,
+                    variant: "destructive"
+                });
+                // Optional: Auto-fallback to Chatterbox?
+                // For now, adhere to prompt: "don't generate the audio"
+                setAudioGeneratingForMessage(messageId, false);
+                return;
+            }
+
+            setAudioGeneratingForMessage(messageId, true);
+            
+            // Single-shot generation (fast)
+            const audioBlob = await generateKokoroAudio(text, kokoroVoice, kokoroSpeed, lang);
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            setAudioForMessage(messageId, audioUrl);
+            
+        } catch (error) {
+            console.error("Kokoro generation failed", error);
+            toast({
+                title: "TTS Generation Failed",
+                description: "Kokoro service failed. Check if the server is running on port 8090.",
+                variant: "destructive"
+            });
+            setAudioGeneratingForMessage(messageId, false);
+        }
+    } else {
+        // Chatterbox Logic (Streaming)
+        setAudioGeneratingForMessage(messageId, true);
+        streamingAudio.requestTTS(text, messageId, lang, {
+            exaggeration: ttsExaggeration,
+            cfg_weight: ttsCfgWeight,
+            reference_audio_file: ttsRefAudioFile
+        });
+    }
+  };
+
   const addProcessedMessages = (userMessage: Message, assistantMessage: Message) => {
     if (!currentChatThreadId) return;
 
     const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
     const newTitle = isNewThread ? (userMessage.content.substring(0, 30) + (userMessage.content.length > 30 ? '...' : '')) : undefined;
 
-    // Mark assistant message as generating audio if audio is enabled
     const assistantMessageForState = {
       ...assistantMessage,
       audioData: null,
@@ -347,19 +397,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return updatedMessages;
     });
 
-    // ~ UPDATED: Only request TTS if the audio toggle is enabled, pass messageId
     if (isAudioResponseEnabled) {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = assistantMessage.content;
       const textContent = tempDiv.textContent || tempDiv.innerText || '';
-      if (textContent.trim()) {
-        const lang = (assistantMessage as any).detected_language || 'en';
-        streamingAudio.requestTTS(textContent, assistantMessage.id, lang, {
-          exaggeration: ttsExaggeration,
-          cfg_weight: ttsCfgWeight,
-          reference_audio_file: ttsRefAudioFile
-        });
-      }
+      const lang = (assistantMessage as any).detected_language || 'en';
+      
+      handleTTSGeneration(textContent, assistantMessage.id, lang);
     }
   };
 
@@ -415,7 +459,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         throw new Error('No valid response received from the AI service.');
       }
 
-      // Log usage data to Firestore if available
       if (response.usage && user?.uid) {
         await logUsageToFirestore(user.uid, response.usage);
       }
@@ -427,7 +470,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading: false,
         timestamp: new Date().toISOString(),
         audioData: null,
-        isAudioGenerating: isAudioResponseEnabled, // Mark as generating if audio is enabled
+        isAudioGenerating: isAudioResponseEnabled,
         ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
         ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
       };
@@ -438,19 +481,12 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return finalMessages;
       });
 
-      // ~ UPDATED: Check the toggle state before initiating TTS, pass messageId
       if (isAudioResponseEnabled) {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = response.answer;
         const textContent = tempDiv.textContent || tempDiv.innerText || '';
-
-        if (textContent.trim()) {
-          streamingAudio.requestTTS(textContent, assistantPlaceholderMessage.id, response.detected_language || 'en', {
-            exaggeration: ttsExaggeration,
-            cfg_weight: ttsCfgWeight,
-            reference_audio_file: ttsRefAudioFile
-          });
-        }
+        
+        handleTTSGeneration(textContent, assistantPlaceholderMessage.id, response.detected_language || 'en');
       }
 
     } catch (error) {
@@ -480,7 +516,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const startNewChat = () => {
-    // If the current thread is already an empty "New Chat", don't create another one
     if (activeChatThread && activeChatThread.title === 'New Chat' && activeChatThread.messages.length === 0) {
         if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
             setIsHistoryPanelOpen(false);
@@ -505,7 +540,6 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // NEW: Restore audio from IndexedDB for a specific message
   const restoreAudioFromCache = useCallback(async (messageId: string) => {
     try {
       const blob = await getAudio(messageId);
@@ -531,10 +565,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsHistoryPanelOpen(false);
       }
 
-      // Restore audio for assistant messages from IndexedDB
       for (const message of thread.messages) {
         if (message.role === 'assistant' && !message.audioUrl) {
-          // Try to restore from cache (non-blocking)
           restoreAudioFromCache(message.id);
         }
       }
@@ -572,17 +604,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsHistoryPanelOpen(prev => !prev);
   };
 
-  // + Updated requestTTS to accept messageId and set generating state
   const requestTTS = useCallback((text: string, messageId: string, language: string = 'en') => {
-    // Mark the message as generating audio
-    setAudioGeneratingForMessage(messageId, true);
-
-    streamingAudio.requestTTS(text, messageId, language, {
-      exaggeration: ttsExaggeration,
-      cfg_weight: ttsCfgWeight,
-      reference_audio_file: ttsRefAudioFile
-    });
-  }, [streamingAudio, ttsExaggeration, ttsCfgWeight, ttsRefAudioFile, setAudioGeneratingForMessage]);
+    handleTTSGeneration(text, messageId, language);
+  }, [handleTTSGeneration]);
 
   return (
     <ChatContext.Provider value={{
@@ -592,29 +616,41 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       messages,
       isLoadingResponse,
       isHistoryPanelOpen,
-      isAudioResponseEnabled, // + Expose new state
-      toggleAudioResponse,    // + Expose new function
-      ttsExaggeration,        // + Expose TTS parameters
+      isAudioResponseEnabled,
+      toggleAudioResponse,
+      
+      // Provider State
+      ttsProvider,
+      setTtsProvider,
+
+      // Chatterbox
+      ttsExaggeration,
       setTtsExaggeration,
       ttsCfgWeight,
       setTtsCfgWeight,
       ttsRefAudioFile,
       setTtsRefAudioFile,
-      // + Expose TTS status
+
+      // Kokoro
+      kokoroVoice,
+      setKokoroVoice,
+      kokoroSpeed,
+      setKokoroSpeed,
+
+      // TTS Status
       ttsIsConnected: streamingAudio.isConnected,
       ttsIsLoading: streamingAudio.isLoading,
       ttsIsStreaming: streamingAudio.isStreaming,
       ttsIsPlaying: streamingAudio.isPlaying,
-      ttsIsPaused: streamingAudio.isPaused, // NEW: Expose paused state
+      ttsIsPaused: streamingAudio.isPaused,
       ttsProgressPercent: streamingAudio.progressPercent,
       ttsCurrentChunk: streamingAudio.currentChunk,
       ttsTotalChunks: streamingAudio.totalChunks,
       ttsError: streamingAudio.error,
       ttsUsage: streamingAudio.ttsUsage,
-      ttsStreamingPlaybackPosition: streamingAudio.streamingPlaybackPosition, // NEW: Expose playback position
-      // + Expose current TTS message ID
+      ttsStreamingPlaybackPosition: streamingAudio.streamingPlaybackPosition,
       currentTtsMessageId: streamingAudio.currentMessageId,
-      // + Expose role and system prompt
+
       chatbotRole,
       setChatbotRole,
       systemPrompt,
@@ -631,13 +667,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setIsHistoryPanelOpen,
       getThreadTitle,
       stopCurrentAudio,
-      pauseStreamingAudio: streamingAudio.pauseAudio, // NEW: Expose pause function
-      resumeStreamingAudio: streamingAudio.resumeAudio, // NEW: Expose resume function
-      stopChunkPlayback: streamingAudio.stopChunkPlayback, // NEW: Expose stop chunk playback function
+      pauseStreamingAudio: streamingAudio.pauseAudio,
+      resumeStreamingAudio: streamingAudio.resumeAudio,
+      stopChunkPlayback: streamingAudio.stopChunkPlayback,
       requestTTS,
       setAudioForMessage,
       setAudioGeneratingForMessage,
-      restoreAudioFromCache, // NEW: Expose restore function
+      restoreAudioFromCache,
     }}>
       {children}
     </ChatContext.Provider>
@@ -651,4 +687,3 @@ export const useChat = (): ChatContextType => {
   }
   return context;
 };
-

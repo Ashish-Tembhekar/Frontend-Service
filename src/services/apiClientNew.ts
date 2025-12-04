@@ -3,6 +3,9 @@
 import type { AskQuestionResponse, UploadPdfResponse, TranscribeResponse, ListFilesResponse, DeleteChunksResponse } from '../types/chat';
 import { appConfig } from '../lib/config';
 
+// Define the Kokoro service URL (fallback to 8090 if not in config)
+const KOKORO_API_URL = (appConfig as any).kokoroTtsUrl || "http://localhost:8090";
+
 /**
  * Uploads a PDF file to the backend for indexing.
  */
@@ -39,17 +42,12 @@ export async function uploadPdfDocument(file: File): Promise<UploadPdfResponse> 
  */
 export async function listFiles(): Promise<ListFilesResponse> {
   try {
-    console.log('apiClientNew - listFiles called');
-    
     const response = await fetch(`${appConfig.fastApiBaseUrl}/files/`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
       },
     });
-
-    console.log('apiClientNew - List files response status:', response.status);
-    console.log('apiClientNew - List files response ok:', response.ok);
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -58,7 +56,6 @@ export async function listFiles(): Promise<ListFilesResponse> {
     }
 
     const result: ListFilesResponse = await response.json();
-    console.log('apiClientNew - List files response data:', result);
     return result;
 
   } catch (error) {
@@ -75,17 +72,12 @@ export async function listFiles(): Promise<ListFilesResponse> {
  */
 export async function deleteFileChunks(uuid: string): Promise<DeleteChunksResponse> {
   try {
-    console.log('apiClientNew - deleteFileChunks called with uuid:', uuid);
-    
     const response = await fetch(`${appConfig.fastApiBaseUrl}/files/${uuid}`, {
       method: 'DELETE',
       headers: {
         'Accept': 'application/json',
       },
     });
-
-    console.log('apiClientNew - Delete chunks response status:', response.status);
-    console.log('apiClientNew - Delete chunks response ok:', response.ok);
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -94,7 +86,6 @@ export async function deleteFileChunks(uuid: string): Promise<DeleteChunksRespon
     }
 
     const result: DeleteChunksResponse = await response.json();
-    console.log('apiClientNew - Delete chunks response data:', result);
     return result;
 
   } catch (error) {
@@ -107,8 +98,7 @@ export async function deleteFileChunks(uuid: string): Promise<DeleteChunksRespon
 }
 
 /**
- * Asks a question to the backend and gets a response.
- * Now includes conversation history for context as a formatted string.
+ * Asks a question to the backend.
  */
 export async function askQuestionAPI(
   query: string,
@@ -119,41 +109,16 @@ export async function askQuestionAPI(
   systemPrompt?: string
 ): Promise<AskQuestionResponse> {
   try {
-    console.log('apiClientNew - askQuestionAPI called with query:', query);
-    console.log('apiClientNew - askQuestionAPI called with conversationHistory:', conversationHistory);
-    console.log('apiClientNew - askQuestionAPI called with detectedLang:', detectedLang);
-    console.log('apiClientNew - askQuestionAPI called with needsAudio:', needsAudio);
-    console.log('apiClientNew - askQuestionAPI called with userId:', userId);
-    console.log('apiClientNew - askQuestionAPI called with systemPrompt:', systemPrompt);
-
     const url = new URL(`${appConfig.fastApiBaseUrl}/ask/`);
     url.searchParams.append('q', query);
 
-    if (detectedLang) {
-      url.searchParams.append('detected_lang', detectedLang);
-    }
-
-    // Add conversation history as a string parameter
+    if (detectedLang) url.searchParams.append('detected_lang', detectedLang);
     if (conversationHistory && conversationHistory.trim() !== '') {
       url.searchParams.append('conversation_history', conversationHistory);
     }
-
-    // Add audio flag parameter
-    if (needsAudio) {
-      url.searchParams.append('needs_audio', 'true');
-    }
-
-    // Add user ID for usage tracking
-    if (userId) {
-      url.searchParams.append('user_id', userId);
-    }
-
-    // Add system prompt for role-based responses
-    if (systemPrompt) {
-      url.searchParams.append('system_prompt', systemPrompt);
-    }
-
-    console.log('apiClientNew - Request URL:', url.toString());
+    if (needsAudio) url.searchParams.append('needs_audio', 'true');
+    if (userId) url.searchParams.append('user_id', userId);
+    if (systemPrompt) url.searchParams.append('system_prompt', systemPrompt);
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -162,9 +127,6 @@ export async function askQuestionAPI(
       },
     });
 
-    console.log('apiClientNew - Response status:', response.status);
-    console.log('apiClientNew - Response ok:', response.ok);
-
     if (!response.ok) {
       const errorBody = await response.text();
       console.error("Error from FastAPI backend during ask:", response.status, errorBody);
@@ -172,7 +134,6 @@ export async function askQuestionAPI(
     }
 
     const result: AskQuestionResponse = await response.json();
-    console.log('apiClientNew - Response data:', result);
     return result;
 
   } catch (error) {
@@ -185,16 +146,12 @@ export async function askQuestionAPI(
 }
 
 /**
- * Generates a system prompt based on a role using the backend LLM.
+ * Generates a system prompt based on a role.
  */
 export async function generateSystemPromptAPI(role: string): Promise<{ role: string; system_prompt: string; success: boolean }> {
   try {
-    console.log('apiClientNew - generateSystemPromptAPI called with role:', role);
-
     const url = new URL(`${appConfig.fastApiBaseUrl}/generate-system-prompt/`);
     url.searchParams.append('role', role);
-
-    console.log('apiClientNew - Request URL:', url.toString());
 
     const response = await fetch(url.toString(), {
       method: 'GET',
@@ -203,8 +160,6 @@ export async function generateSystemPromptAPI(role: string): Promise<{ role: str
       },
     });
 
-    console.log('apiClientNew - Response status:', response.status);
-
     if (!response.ok) {
       const errorBody = await response.text();
       console.error("Error from FastAPI backend during prompt generation:", response.status, errorBody);
@@ -212,7 +167,6 @@ export async function generateSystemPromptAPI(role: string): Promise<{ role: str
     }
 
     const result = await response.json();
-    console.log('apiClientNew - Generated prompt:', result);
     return result;
 
   } catch (error) {
@@ -225,25 +179,17 @@ export async function generateSystemPromptAPI(role: string): Promise<{ role: str
 }
 
 /**
- * Transcribes an audio file using the backend service.
+ * Transcribes an audio file.
  */
 export async function transcribeAudioAPI(audioBlob: Blob): Promise<TranscribeResponse> {
-    console.log('apiClientNew - transcribeAudioAPI called with blob size:', audioBlob.size);
-    console.log('apiClientNew - transcribeAudioAPI blob type:', audioBlob.type);
-
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
 
     try {
-        console.log('apiClientNew - Making transcribe request to:', `${appConfig.fastApiBaseUrl}/transcribe/`);
-        
         const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe/`, {
             method: 'POST',
             body: formData,
         });
-
-        console.log('apiClientNew - Transcribe response status:', response.status);
-        console.log('apiClientNew - Transcribe response ok:', response.ok);
 
         if (!response.ok) {
             const errorBody = await response.text();
@@ -252,17 +198,10 @@ export async function transcribeAudioAPI(audioBlob: Blob): Promise<TranscribeRes
         }
 
         const result: TranscribeResponse = await response.json();
-        console.log('apiClientNew - Transcribe response data:', result);
         return result;
 
     } catch (error) {
         console.error("Error calling transcribe endpoint:", error);
-        console.error("Error details:", {
-            message: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : 'No stack trace',
-            name: error instanceof Error ? error.name : 'Unknown'
-        });
-        
         if (error instanceof Error && error.message.startsWith('Transcription failed')) {
             throw error;
         }
@@ -271,8 +210,7 @@ export async function transcribeAudioAPI(audioBlob: Blob): Promise<TranscribeRes
 }
 
 /**
- * Parallel processing: transcribe audio and process query in one optimized call.
- * This combines transcription and query processing for faster voice interactions.
+ * Parallel processing: transcribe audio and process query.
  */
 export async function transcribeAndAskAPI(
     audioBlob: Blob,
@@ -281,43 +219,25 @@ export async function transcribeAndAskAPI(
     needsAudio: boolean = true,
     userId?: string
 ): Promise<AskQuestionResponse> {
-    console.log('apiClientNew - transcribeAndAskAPI called with blob size:', audioBlob.size);
-    console.log('apiClientNew - transcribeAndAskAPI conversationHistory:', conversationHistory);
-    console.log('apiClientNew - transcribeAndAskAPI selectedLanguage:', selectedLanguage);
-    console.log('apiClientNew - transcribeAndAskAPI needsAudio:', needsAudio);
-    console.log('apiClientNew - transcribeAndAskAPI userId:', userId);
-
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
 
-    // Add conversation history if provided
     if (conversationHistory && conversationHistory.trim() !== '') {
         formData.append('conversation_history', conversationHistory);
     }
-
-    // Add selected language if provided
     if (selectedLanguage && selectedLanguage !== 'auto') {
         formData.append('selected_language', selectedLanguage);
     }
-
-    // Add audio flag
     formData.append('needs_audio', needsAudio.toString());
-
-    // Add user ID for usage tracking
     if (userId) {
         formData.append('user_id', userId);
     }
 
     try {
-        console.log('apiClientNew - Making parallel transcribe-and-ask request to:', `${appConfig.fastApiBaseUrl}/transcribe-and-ask/`);
-        
         const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
             method: 'POST',
             body: formData,
         });
-
-        console.log('apiClientNew - Transcribe-and-ask response status:', response.status);
-        console.log('apiClientNew - Transcribe-and-ask response ok:', response.ok);
 
         if (!response.ok) {
             const errorBody = await response.text();
@@ -326,17 +246,10 @@ export async function transcribeAndAskAPI(
         }
 
         const result: AskQuestionResponse = await response.json();
-        console.log('apiClientNew - Transcribe-and-ask response data:', result);
         return result;
 
     } catch (error) {
         console.error("Error calling transcribe-and-ask endpoint:", error);
-        console.error("Error details:", {
-            message: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : 'No stack trace',
-            name: error instanceof Error ? error.name : 'Unknown'
-        });
-        
         if (error instanceof Error && error.message.startsWith('Parallel transcribe-and-ask failed')) {
             throw error;
         }
@@ -346,7 +259,6 @@ export async function transcribeAndAskAPI(
 
 /**
  * Transcribe and ask with streaming TTS response.
- * This version returns the text response immediately and uses WebSocket for streaming audio.
  */
 export async function transcribeAndAskStreamingAPI(
     audioBlob: Blob,
@@ -355,42 +267,25 @@ export async function transcribeAndAskStreamingAPI(
     onStreamingAudio?: (text: string, language: string) => void,
     userId?: string
 ): Promise<AskQuestionResponse> {
-    console.log('apiClientNew - transcribeAndAskStreamingAPI called with blob size:', audioBlob.size);
-    console.log('apiClientNew - transcribeAndAskStreamingAPI conversationHistory:', conversationHistory);
-    console.log('apiClientNew - transcribeAndAskStreamingAPI selectedLanguage:', selectedLanguage);
-    console.log('apiClientNew - transcribeAndAskStreamingAPI userId:', userId);
-
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.webm');
 
-    // Add conversation history if provided
     if (conversationHistory && conversationHistory.trim() !== '') {
         formData.append('conversation_history', conversationHistory);
     }
-
-    // Add selected language if provided
     if (selectedLanguage && selectedLanguage !== 'auto') {
         formData.append('selected_language', selectedLanguage);
     }
-
-    // Request text response without audio (we'll stream audio separately)
-    formData.append('needs_audio', 'false');
-
-    // Add user ID for usage tracking
+    formData.append('needs_audio', 'false'); // Always false for streaming logic
     if (userId) {
         formData.append('user_id', userId);
     }
 
     try {
-        console.log('apiClientNew - Making streaming transcribe-and-ask request to:', `${appConfig.fastApiBaseUrl}/transcribe-and-ask/`);
-
         const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
             method: 'POST',
             body: formData,
         });
-
-        console.log('apiClientNew - Streaming transcribe-and-ask response status:', response.status);
-        console.log('apiClientNew - Streaming transcribe-and-ask response ok:', response.ok);
 
         if (!response.ok) {
             const errorBody = await response.text();
@@ -399,17 +294,14 @@ export async function transcribeAndAskStreamingAPI(
         }
 
         const result: AskQuestionResponse = await response.json();
-        console.log('apiClientNew - Streaming transcribe-and-ask response data:', result);
 
-        // If we have a text response and a streaming callback, initiate streaming TTS
+        // If text response exists, trigger callback to start streaming (Chatterbox logic)
         if (result.answer && onStreamingAudio) {
-            // Extract text content from HTML response
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = result.answer;
             const textContent = tempDiv.textContent || tempDiv.innerText || '';
 
             if (textContent.trim()) {
-                // Trigger streaming audio for the response
                 onStreamingAudio(textContent, result.detected_language || 'en');
             }
         }
@@ -418,15 +310,44 @@ export async function transcribeAndAskStreamingAPI(
 
     } catch (error) {
         console.error("Error calling streaming transcribe-and-ask endpoint:", error);
-        console.error("Error details:", {
-            message: error instanceof Error ? error.message : 'Unknown error',
-            stack: error instanceof Error ? error.stack : 'No stack trace',
-            name: error instanceof Error ? error.name : 'Unknown'
-        });
-
         if (error instanceof Error && error.message.startsWith('Streaming transcribe-and-ask failed')) {
             throw error;
         }
         throw new Error("Failed to connect to the streaming voice processing service. Please check the backend or try again.");
+    }
+}
+
+/**
+ * Generates audio using the Kokoro TTS service.
+ * Returns a Blob containing the WAV audio.
+ */
+export async function generateKokoroAudio(
+    text: string,
+    voice: string,
+    speed: number,
+    language: string
+): Promise<Blob> {
+    const formData = new FormData();
+    formData.append("text", text);
+    formData.append("voice", voice);
+    formData.append("speed", speed.toString());
+    formData.append("language", language);
+
+    try {
+        console.log(`🔊 Calling Kokoro API at ${KOKORO_API_URL}/generate`);
+        const response = await fetch(`${KOKORO_API_URL}/generate`, {
+            method: "POST",
+            body: formData
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || `Kokoro generation failed with status ${response.status}`);
+        }
+
+        return await response.blob();
+    } catch (e) {
+        console.error("❌ Kokoro API Error:", e);
+        throw e;
     }
 }

@@ -17,4 +17,6 @@ export const appConfig = {
   // File size limits in MB
   maxFileSizeMB: parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB || "50"),
   maxPdfSizeMB: parseInt(process.env.NEXT_PUBLIC_MAX_PDF_SIZE_MB || "2"),
+
+  kokoroTtsUrl: process.env.NEXT_PUBLIC_KOKORO_TTS_URL || "https://xxvzsj4f-8090.inc1.devtunnels.ms",
 };
