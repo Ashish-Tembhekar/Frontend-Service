@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Mail, LogOut } from 'lucide-react';
+import { User, Mail, LogOut, LayoutDashboard } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 export function UserMenu() {
@@ -72,6 +72,11 @@ export function UserMenu() {
             )}
           </div>
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => router.push('/dashboard')} className="cursor-pointer">
+          <LayoutDashboard className="mr-2 h-4 w-4" />
+          <span>Dashboard</span>
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600">
           <LogOut className="mr-2 h-4 w-4" />

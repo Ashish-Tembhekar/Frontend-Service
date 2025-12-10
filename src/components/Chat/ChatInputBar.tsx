@@ -23,7 +23,7 @@ export function ChatInputBar() {
   // + Destructure the new state and toggle function from the context
   const { sendMessage, addProcessedMessages, uploadFile, isLoadingResponse, messages, stopCurrentAudio, isAudioResponseEnabled, toggleAudioResponse } = useChat();
   const { user } = useAuth(); // Get authenticated user for usage tracking
-  
+
   const languageOptions = [
     { value: 'auto', label: 'Auto-detect' },
     { value: 'en', label: 'English' },
@@ -38,7 +38,7 @@ export function ChatInputBar() {
     { value: 'pt', label: 'Portuguese' },
     { value: 'it', label: 'Italian' },
   ];
-  
+
   const [selectedLanguage, setSelectedLanguage] = useState('auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -62,7 +62,7 @@ export function ChatInputBar() {
     // The `useStreamingAudio` hook manages the actual playback state.
     // This can be further simplified or removed if the UI state is managed by the hook.
   }, [messages, expectingAudioResponse, isLoadingResponse, toast]);
-  
+
   useEffect(() => {
     return () => {
       if (audioPlayerRef.current) {
@@ -72,7 +72,7 @@ export function ChatInputBar() {
       }
     };
   }, []);
-  
+
   const handleMicClick = async () => {
     if (isLoadingResponse || isTranscribing) return;
 
@@ -86,7 +86,7 @@ export function ChatInputBar() {
       stopRecording();
       return;
     }
-    
+
     stopCurrentAudio();
 
     try {
@@ -115,7 +115,7 @@ export function ChatInputBar() {
     mediaRecorderRef.current.onstop = async () => {
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
       stream.getTracks().forEach(track => track.stop());
-      
+
       setIsTranscribing(true);
       setInputValue("Processing voice message...");
 
@@ -129,7 +129,7 @@ export function ChatInputBar() {
             conversationHistoryString += `User: ${userMsg.content}\nAssistant: ${assistantMsg.content}\n\n`;
           }
         }
-        
+
         // This remains the same, as `addProcessedMessages` will handle the audio toggle
         const response = await transcribeAndAskAPI(
           audioBlob,
@@ -165,23 +165,23 @@ export function ChatInputBar() {
           };
 
           addProcessedMessages(userMessage, assistantMessage);
-          
+
           setTimeout(() => {
             setInputValue('');
           }, 1000);
-          
+
         } else {
-          toast({ 
-            title: "No speech detected", 
-            description: "Couldn't detect any speech in the audio.", 
-            variant: "destructive" 
+          toast({
+            title: "No speech detected",
+            description: "Couldn't detect any speech in the audio.",
+            variant: "destructive"
           });
         }
       } catch (error) {
-        toast({ 
-          title: "Voice Processing Failed", 
-          description: "Could not process the voice message. Please try again.", 
-          variant: "destructive" 
+        toast({
+          title: "Voice Processing Failed",
+          description: "Could not process the voice message. Please try again.",
+          variant: "destructive"
         });
       } finally {
         setIsTranscribing(false);
@@ -209,7 +209,7 @@ export function ChatInputBar() {
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
-    
+
     const file = files[0];
     const validation = validateFileSize(file);
     if (!validation.isValid) {
@@ -229,7 +229,7 @@ export function ChatInputBar() {
       }
       return;
     }
-    
+
     try {
       await uploadFile(file);
     } catch (error) {
@@ -248,20 +248,20 @@ export function ChatInputBar() {
 
   const handleSubmit = async () => {
     if (isLoadingResponse || !inputValue.trim()) return;
-    
+
     if (isRecording) {
       stopRecording();
     }
-    
+
     stopCurrentAudio();
-    
+
     const languageToUse = selectedLanguage === 'auto' ? undefined : selectedLanguage;
     await sendMessage(inputValue, undefined, false, languageToUse);
     setInputValue('');
-    
-    const textarea = document.querySelector('textarea'); 
+
+    const textarea = document.querySelector('textarea');
     if (textarea) {
-      textarea.style.height = 'auto'; 
+      textarea.style.height = 'auto';
     }
   };
 
@@ -300,10 +300,10 @@ export function ChatInputBar() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => fileInputRef.current?.click()} 
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
               disabled={isLoadingResponse || isRecording || isTranscribing}
               className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
               aria-label="Upload file"
@@ -350,35 +350,53 @@ export function ChatInputBar() {
               </Tooltip>
             </TooltipProvider>
 
-            <Button 
-              onClick={handleMicClick}
-              disabled={isMicDisabled}
-              size="icon" 
-              className={cn(
-                "h-9 w-9 rounded-full transition-all duration-200",
-                isRecording
-                  ? "bg-red-100 text-red-600 animate-pulse"
-                  : "bg-gray-600 text-white hover:bg-white hover:text-gray-600"
-              )}
-              aria-label={isRecording ? "Stop recording" : "Start recording"}
-            >
-              {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={handleMicClick}
+                    disabled={isMicDisabled}
+                    size="icon"
+                    className={cn(
+                      "h-9 w-9 rounded-full transition-all duration-200",
+                      isRecording
+                        ? "bg-red-100 text-red-600 animate-pulse"
+                        : "bg-gray-600 text-white hover:bg-white hover:text-gray-600"
+                    )}
+                    aria-label={isRecording ? "Stop recording" : "Start recording"}
+                  >
+                    {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{isRecording ? "Stop Recording" : "Voice Input"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-            <Button 
-              onClick={() => setIsVoiceChatOpen(true)}
-              disabled={isLoadingResponse || isRecording || isTranscribing}
-              size="icon" 
-              className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
-              aria-label="Start voice chat"
-            >
-              <Phone className="h-4 w-4" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={() => setIsVoiceChatOpen(true)}
+                    disabled={isLoadingResponse || isRecording || isTranscribing}
+                    size="icon"
+                    className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
+                    aria-label="Start voice chat"
+                  >
+                    <Phone className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Start Real-time Voice Chat</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
 
-            <Button 
-              onClick={handleSubmit} 
-              disabled={isLoadingResponse || !inputValue.trim() || isRecording || isTranscribing} 
-              size="icon" 
+            <Button
+              onClick={handleSubmit}
+              disabled={isLoadingResponse || !inputValue.trim() || isRecording || isTranscribing}
+              size="icon"
               className="h-9 w-9 rounded-full bg-gray-500 text-white hover:bg-white hover:text-gray-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md"
               aria-label="Send message"
             >
@@ -399,11 +417,11 @@ export function ChatInputBar() {
         ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
-        accept=".pdf,.docx,.txt,.md" 
+        accept=".pdf,.docx,.txt,.md"
       />
-      <VoiceChatFullScreen 
-        isOpen={isVoiceChatOpen} 
-        onClose={() => setIsVoiceChatOpen(false)} 
+      <VoiceChatFullScreen
+        isOpen={isVoiceChatOpen}
+        onClose={() => setIsVoiceChatOpen(false)}
       />
     </div>
   );

@@ -3,11 +3,10 @@
 
 import React from 'react';
 import { Button } from '../ui/button';
-import { PanelLeftClose, PanelLeftOpen, PlusCircle, BarChart3, Sparkles } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, PlusCircle, Sparkles } from 'lucide-react';
 import { useChat } from '../../contexts/ChatContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { UserMenu } from '../Auth/UserMenu';
-import Link from 'next/link';
 
 interface ChatHeaderProps {
   isPopupMode?: boolean;
@@ -15,8 +14,8 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ isPopupMode = false }: ChatHeaderProps) {
   const { toggleHistoryPanel, isHistoryPanelOpen, startNewChat } = useChat();
-  
-return (
+
+  return (
     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white h-14 shrink-0 sticky top-0 z-20">
       {/* Left side - minimal controls */}
       <div className="flex items-center gap-2">
@@ -52,16 +51,7 @@ return (
 
       {/* Right side - minimal actions */}
       <div className="flex items-center gap-2">
-        <Link href="/dashboard">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Go to dashboard"
-            className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
-          >
-            <BarChart3 className="h-4 w-4" />
-          </Button>
-        </Link>
+        {/* Log out/User Menu placed here */}
 
         <UserMenu />
       </div>
