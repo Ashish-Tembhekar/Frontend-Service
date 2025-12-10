@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Geist, Geist_Mono, Lora } from 'next/font/google';
 import './globals.css';
 import { ChatProvider } from '../contexts/ChatContext';
 import { Toaster } from "../components/ui/toaster";
@@ -13,6 +13,12 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
   subsets: ['latin'],
+});
+
+const lora = Lora({
+  variable: '--font-lora',
+  subsets: ['latin'],
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
@@ -56,7 +62,7 @@ export default function RootLayout({
         <meta name="msapplication-TileColor" content="#3b82f6" />
         <meta name="msapplication-tap-highlight" content="no" />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col h-full overflow-hidden`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${lora.variable} antialiased flex flex-col h-full overflow-hidden`}>
         <AuthProvider>
           <ChatProvider>
             {children}
