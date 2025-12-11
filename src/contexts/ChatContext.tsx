@@ -66,7 +66,7 @@ interface ChatContextType {
 
     // Actions
     sendMessage: (userInput: string, originalText?: string, isVoiceMessage?: boolean, detectedLang?: string) => Promise<void>;
-    addProcessedMessages: (userMessage: Message, assistantMessage: Message) => void;
+    addProcessedMessages: (userMessage: Message, assistantMessage: Message, skipTTS?: boolean) => void;
     uploadFile: (file: File) => Promise<void>;
     startNewChat: () => void;
     loadChatThread: (threadId: string) => void;
@@ -79,7 +79,7 @@ interface ChatContextType {
     pauseStreamingAudio: () => void;
     resumeStreamingAudio: () => void;
     stopChunkPlayback: () => void;
-    requestTTS: (text: string, messageId: string, language?: string) => void;
+    requestTTS: (text: string, messageId: string, language?: string, skipPersistence?: boolean) => void;
     setAudioForMessage: (messageId: string, audioUrl: string) => void;
     setAudioGeneratingForMessage: (messageId: string, isGenerating: boolean) => void;
     restoreAudioFromCache: (messageId: string) => Promise<void>;
@@ -180,13 +180,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [streamingAudio.ttsUsage, user?.uid]);
 
-    // Disconnect Chatterbox WebSocket when switching to Kokoro
+    // Disconnect WebSocket when switching providers to ensure fresh connection to the correct service
     useEffect(() => {
-        if (ttsProvider === 'kokoro' && streamingAudio.isConnected) {
-            console.log('🎵 Switching to Kokoro TTS, disconnecting Chatterbox WebSocket...');
+        if (streamingAudio.isConnected) {
+            console.log('🎵 TTS Provider changed, disconnecting current WebSocket...');
             streamingAudio.disconnect();
         }
-    }, [ttsProvider, streamingAudio.isConnected]);
+    }, [ttsProvider]);
 
 
     const updateMessagesInCurrentThread = (newMessages: Message[], title?: string) => {
@@ -342,98 +342,44 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [setIsAudioResponseEnabled, stopCurrentAudio]);
 
     // Helper to handle the actual API calls for TTS based on provider
-    const handleTTSGeneration = async (text: string, messageId: string, lang: string) => {
+    const handleTTSGeneration = async (text: string, messageId: string, lang: string, skipPersistence: boolean = false) => {
         if (!text.trim()) return;
 
-        if (ttsProvider === 'kokoro') {
-            // Kokoro Logic
-            try {
-                // Check language support for Kokoro
-                const supportedLangs = ['en', 'es', 'fr', 'hi', 'it', 'ja', 'pt', 'zh'];
-                const langPrefix = lang.toLowerCase().split('-')[0];
+        setAudioGeneratingForMessage(messageId, true);
 
-                if (!supportedLangs.includes(langPrefix)) {
-                    toast({
-                        title: "Language Not Supported",
-                        description: `Kokoro doesn't support '${lang}'. Switching to Chatterbox recommended.`,
-                        variant: "destructive"
-                    });
-                    // Optional: Auto-fallback to Chatterbox?
-                    // For now, adhere to prompt: "don't generate the audio"
-                    setAudioGeneratingForMessage(messageId, false);
-                    return;
-                }
+        // Check if we need to connect
+        // Note: streamingAudio.isConnected is a boolean, doesn't tell us WHICH provider.
+        // But requestTTS inside the hook will check connection and reconnect if needed (if we modified it to be smart, but we just made it assume connection or try to connect).
+        // Best approach: If not connected, call connect(provider).
 
-                setAudioGeneratingForMessage(messageId, true);
+        // We can explicitly connect if strictly not connected.
+        // But useStreamingAudio.requestTTS handles connection check but it might default to 'chatterbox' if we rely on internal reconnection logic.
+        // So let's ensure we are connected to the RIGHT provider.
 
-                // Single-shot generation (fast)
-                const audioBlob = await generateKokoroAudio(text, kokoroVoice, kokoroSpeed, lang);
-                const audioUrl = URL.createObjectURL(audioBlob);
+        // We can pass the provider to requestTTS and let it handle connection logic if implicit.
 
-                // Save to IndexedDB for persistence (like Chatterbox does)
-                try {
-                    await saveAudio(messageId, audioBlob);
-                    console.log(`🎵 Kokoro audio saved to IndexedDB for message: ${messageId}`);
-                } catch (saveError) {
-                    console.error('🎵 Failed to save Kokoro audio to IndexedDB:', saveError);
-                }
+        // Logic:
+        // Always try to use streaming for both.
 
-                setAudioForMessage(messageId, audioUrl);
+        try {
+            streamingAudio.requestTTS(text, messageId, lang, {
+                exaggeration: ttsExaggeration,
+                cfg_weight: ttsCfgWeight,
+                reference_audio_file: ttsRefAudioFile
+            }, ttsProvider, skipPersistence); // Pass ttsProvider and skipPersistence
 
-            } catch (error) {
-                console.error("Kokoro generation failed", error);
-                toast({
-                    title: "TTS Generation Failed",
-                    description: "Kokoro service failed. Check if the server is running on port 8090.",
-                    variant: "destructive"
-                });
-                setAudioGeneratingForMessage(messageId, false);
-            }
-        } else {
-            // Chatterbox Logic (Streaming)
-            setAudioGeneratingForMessage(messageId, true);
-
-            // Connection should already be established from ChatView
-            // But add fallback check for edge cases
-            if (!streamingAudio.isConnected) {
-                console.warn('🎵 Chatterbox not connected - attempting to connect...');
-                streamingAudio.connect();
-
-                // Show user feedback
-                toast({
-                    title: "Connecting to TTS",
-                    description: "Establishing connection to Chatterbox TTS service...",
-                });
-
-                // Wait a bit for connection then try request
-                setTimeout(() => {
-                    if (streamingAudio.isConnected) {
-                        streamingAudio.requestTTS(text, messageId, lang, {
-                            exaggeration: ttsExaggeration,
-                            cfg_weight: ttsCfgWeight,
-                            reference_audio_file: ttsRefAudioFile
-                        });
-                    } else {
-                        toast({
-                            title: "Connection Failed",
-                            description: "Could not connect to Chatterbox TTS service. Please try again.",
-                            variant: "destructive"
-                        });
-                        setAudioGeneratingForMessage(messageId, false);
-                    }
-                }, 2000); // Give it 2 seconds to connect
-            } else {
-                // Already connected (normal case), send request immediately
-                streamingAudio.requestTTS(text, messageId, lang, {
-                    exaggeration: ttsExaggeration,
-                    cfg_weight: ttsCfgWeight,
-                    reference_audio_file: ttsRefAudioFile
-                });
-            }
+        } catch (error) {
+            console.error("TTS Request failed", error);
+            setAudioGeneratingForMessage(messageId, false);
+            toast({
+                title: "TTS Error",
+                description: "Failed to initiate text-to-speech.",
+                variant: "destructive"
+            });
         }
     };
 
-    const addProcessedMessages = (userMessage: Message, assistantMessage: Message) => {
+    const addProcessedMessages = (userMessage: Message, assistantMessage: Message, skipTTS: boolean = false) => {
         if (!currentChatThreadId) return;
 
         const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
@@ -442,7 +388,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const assistantMessageForState = {
             ...assistantMessage,
             audioData: null,
-            isAudioGenerating: isAudioResponseEnabled
+            isAudioGenerating: isAudioResponseEnabled && !skipTTS // Do not show generating state if skipping TTS
         };
 
         setMessages(prevMessages => {
@@ -451,7 +397,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             return updatedMessages;
         });
 
-        if (isAudioResponseEnabled) {
+        if (isAudioResponseEnabled && !skipTTS) {
             const tempDiv = document.createElement('div');
             tempDiv.innerHTML = assistantMessage.content;
             const textContent = tempDiv.textContent || tempDiv.innerText || '';
@@ -658,8 +604,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setIsHistoryPanelOpen(prev => !prev);
     };
 
-    const requestTTS = useCallback((text: string, messageId: string, language: string = 'en') => {
-        handleTTSGeneration(text, messageId, language);
+    const requestTTS = useCallback((text: string, messageId: string, language: string = 'en', skipPersistence: boolean = false) => {
+        handleTTSGeneration(text, messageId, language, skipPersistence);
     }, [handleTTSGeneration]);
 
     return (

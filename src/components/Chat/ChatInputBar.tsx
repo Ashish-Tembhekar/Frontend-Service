@@ -17,11 +17,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useAuth } from '../../contexts/AuthContext';
 import { logUsageToFirestore } from '../../services/usageLogger';
 
+import { VoiceChatSelectionDialog } from './VoiceChatSelectionDialog';
 
 export function ChatInputBar() {
   const [inputValue, setInputValue] = useState('');
   // + Destructure the new state and toggle function from the context
-  const { sendMessage, addProcessedMessages, uploadFile, isLoadingResponse, messages, stopCurrentAudio, isAudioResponseEnabled, toggleAudioResponse } = useChat();
+  const {
+    sendMessage,
+    addProcessedMessages,
+    uploadFile,
+    isLoadingResponse,
+    messages,
+    stopCurrentAudio,
+    isAudioResponseEnabled,
+    toggleAudioResponse,
+    setTtsProvider // + Destructure this
+  } = useChat();
   const { user } = useAuth(); // Get authenticated user for usage tracking
 
   const languageOptions = [
@@ -50,6 +61,7 @@ export function ChatInputBar() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [isVoiceChatOpen, setIsVoiceChatOpen] = useState(false);
+  const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false); // + Added state
   const [expectingAudioResponse, setExpectingAudioResponse] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [lastToastTime, setLastToastTime] = useState(0);
@@ -378,7 +390,7 @@ export function ChatInputBar() {
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    onClick={() => setIsVoiceChatOpen(true)}
+                    onClick={() => setIsSelectionDialogOpen(true)}
                     disabled={isLoadingResponse || isRecording || isTranscribing}
                     size="icon"
                     className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
@@ -419,6 +431,17 @@ export function ChatInputBar() {
         className="hidden"
         accept=".pdf,.docx,.txt,.md"
       />
+
+      <VoiceChatSelectionDialog
+        isOpen={isSelectionDialogOpen}
+        onClose={() => setIsSelectionDialogOpen(false)}
+        onConfirm={(provider) => {
+          setTtsProvider(provider);
+          setIsVoiceChatOpen(true);
+        }}
+        defaultProvider="kokoro"
+      />
+
       <VoiceChatFullScreen
         isOpen={isVoiceChatOpen}
         onClose={() => setIsVoiceChatOpen(false)}

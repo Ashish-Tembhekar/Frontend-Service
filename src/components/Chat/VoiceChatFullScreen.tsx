@@ -12,16 +12,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { logUsageToFirestore } from '@/services/usageLogger';
 
 // Lottie Animation Component (unchanged)
-const LottieAnimation = ({ 
-  animationUrl, 
-  isPlaying = true, 
-  loop = true, 
+const LottieAnimation = ({
+  animationUrl,
+  isPlaying = true,
+  loop = true,
   className = "",
   speed = 1
-}: { 
-  animationUrl: string; 
-  isPlaying?: boolean; 
-  loop?: boolean; 
+}: {
+  animationUrl: string;
+  isPlaying?: boolean;
+  loop?: boolean;
   className?: string;
   speed?: number;
 }) => {
@@ -53,7 +53,7 @@ const LottieAnimation = ({
             });
         }
       };
-      
+
       if (!(window as any).lottie) {
         document.head.appendChild(script);
       } else {
@@ -103,7 +103,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   } = useChat();
   const { toast } = useToast();
   const { user } = useAuth(); // Get authenticated user for usage tracking
-  
+
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [isPlayingResponse, setIsPlayingResponse] = useState(false);
@@ -114,8 +114,8 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const [audioLevel, setAudioLevel] = useState(0);
 
   // CHANGED: isStreamingMode is now a constant, not a state.
-  const isStreamingMode = true; 
-  
+  const isStreamingMode = true;
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   // REMOVED: audioPlayerRef is no longer needed as useStreamingAudio handles playback.
@@ -128,11 +128,11 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const vadAnimationIdRef = useRef<number | null>(null);
   const recordingStartMsRef = useRef<number>(0);
   const [isMounted, setIsMounted] = useState(false);
-  
+
   const isRecordingRef = useRef<boolean>(false);
   const voiceDetectedRef = useRef<boolean>(false);
   const lastVoiceTimeRef = useRef<number>(0);
-  
+
   const bargeInStreamRef = useRef<MediaStream | null>(null);
   const bargeInAudioContextRef = useRef<AudioContext | null>(null);
   const bargeInAnalyserRef = useRef<AnalyserNode | null>(null);
@@ -161,7 +161,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   useEffect(() => {
     setIsMounted(true);
     if (isOpen) {
-      try { stopCurrentAudio?.(); } catch {}
+      try { stopCurrentAudio?.(); } catch { }
       setCurrentUserText('');
       setCurrentAssistantText('');
       setIsPlayingResponse(false);
@@ -191,14 +191,14 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   // Connect to streaming audio when component mounts
   // Handle streaming audio state changes
   useEffect(() => {
-      if (ttsIsPlaying && !isPlayingResponse) {
-        setIsPlayingResponse(true);
-      } else if (!ttsIsPlaying && !ttsIsStreaming && isPlayingResponse) {
-        setIsPlayingResponse(false);
-        setCurrentAssistantText('');
-        setCurrentUserText('');
-        stopBargeInDetector();
-      }
+    if (ttsIsPlaying && !isPlayingResponse) {
+      setIsPlayingResponse(true);
+    } else if (!ttsIsPlaying && !ttsIsStreaming && isPlayingResponse) {
+      setIsPlayingResponse(false);
+      setCurrentAssistantText('');
+      setCurrentUserText('');
+      stopBargeInDetector();
+    }
   }, [ttsIsPlaying, ttsIsStreaming, isPlayingResponse]);
 
   const handleAutoStartRecording = async () => {
@@ -220,7 +220,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       });
     }
   };
-  
+
   const startBargeInDetector = async () => {
     if (isBargeInActiveRef.current || !isOpen) return;
     try {
@@ -235,7 +235,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       source.connect(bargeInAnalyserRef.current);
 
       isBargeInActiveRef.current = true;
-      const threshold = 25; 
+      const threshold = 25;
       const consecutiveFramesRequired = 2;
       let hotFrames = 0;
 
@@ -274,7 +274,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
         bargeInAudioContextRef.current.close();
         bargeInAudioContextRef.current = null;
       }
-    } catch {}
+    } catch { }
     if (bargeInStreamRef.current && bargeInStreamRef.current !== streamRef.current) {
       bargeInStreamRef.current.getTracks().forEach(t => t.stop());
       bargeInStreamRef.current = null;
@@ -303,7 +303,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
         audioContextRef.current.close();
         audioContextRef.current = null;
       }
-      
+
       setIsTranscribing(true);
       setCurrentUserText('Processing your message...');
 
@@ -317,7 +317,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             conversationHistoryString += `User: ${userMsg.content}\nAssistant: ${assistantMsg.content}\n\n`;
           }
         }
-        
+
         // REMOVED: The conditional logic for streaming vs. traditional API call.
         // We now *only* use the streaming API.
         // Generate a message ID for the voice response TTS
@@ -329,7 +329,8 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           'auto',
           (text: string, language: string) => {
             console.log('VoiceChatFullScreen - Starting streaming TTS for:', text.substring(0, 100) + '...');
-            requestTTS(text, voiceResponseMessageId, language);
+            // + UPDATED: Pass skipPersistence = true for real-time mode
+            requestTTS(text, voiceResponseMessageId, language, true);
             setIsPlayingResponse(true);
             setCurrentAssistantText(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
             startBargeInDetector();
@@ -341,10 +342,10 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
         if (response.usage && user?.uid) {
           await logUsageToFirestore(user.uid, response.usage);
         }
-        
+
         if (response.original_text && response.original_text.trim()) {
           setCurrentUserText(response.original_text);
-          
+
           const inputElement = document.querySelector('textarea');
           if (inputElement) {
             inputElement.value = response.original_text;
@@ -354,7 +355,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
               inputElement.dispatchEvent(new Event('input', { bubbles: true }));
             }, 1000);
           }
-          
+
           const userMessage = {
             id: `msg_user_${Date.now()}`,
             role: 'user' as const,
@@ -372,8 +373,9 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             audioData: undefined, // No audio data in streaming mode response
           };
 
-          addProcessedMessages(userMessage, assistantMessage);
-          
+          // + UPDATED: Pass skipTTS = true to prevent double audio playback
+          addProcessedMessages(userMessage, assistantMessage, true);
+
         } else {
           toast({ title: "No speech detected", description: "Couldn't detect any speech in the audio.", variant: "destructive" });
           setCurrentUserText('');
@@ -403,10 +405,10 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const setupVoiceActivityDetection = (stream: MediaStream) => {
     try {
       if (audioContextRef.current) {
-        try { audioContextRef.current.close(); } catch {}
+        try { audioContextRef.current.close(); } catch { }
       }
       audioContextRef.current = new AudioContext();
-      try { void audioContextRef.current.resume(); } catch {}
+      try { void audioContextRef.current.resume(); } catch { }
       analyserRef.current = audioContextRef.current.createAnalyser();
       const source = audioContextRef.current.createMediaStreamSource(stream);
       analyserRef.current.fftSize = 1024;
@@ -541,7 +543,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     if (isPlayingResponse) return "text-green-500";
     return "text-muted-foreground";
   };
-  
+
   const getAnimationStyle = () => {
     if (isRecording) {
       const scale = 1 + (audioLevel / 255) * 0.3;
@@ -584,7 +586,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           >
             {isRecording ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </Button>
-          
+
           {/* REMOVED: The button to toggle streaming mode has been removed. */}
 
           <Button onClick={onClose} size="icon" className="h-16 w-16 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-lg transition-all duration-200">
