@@ -16,8 +16,21 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
   const {
     messages,
     chatbotRole,
+    ttsProvider,
+    ttsIsConnected,
+    connectChatterboxTTS,
+    disconnectChatterboxTTS,
   } = useChat();
   const messagesContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable viewport
+
+  // Establish Chatterbox WebSocket connection when user is in chat window
+  // (Only if Chatterbox is the selected TTS provider)
+  useEffect(() => {
+    if (ttsProvider === 'chatterbox' && !ttsIsConnected) {
+      console.log('🎵 User entered chat window - establishing Chatterbox WebSocket connection...');
+      connectChatterboxTTS();
+    }
+  }, [ttsProvider, ttsIsConnected, connectChatterboxTTS]);
 
   // Scroll to bottom effect
   useEffect(() => {

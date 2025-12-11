@@ -41,6 +41,10 @@ export function AudioPlayer({
   const hasAppliedInitialSeek = useRef(false);
   // Store the position to seek to when audio becomes ready
   const pendingSeekPosition = useRef<number>(0);
+  // Track previous isGenerating state to detect transition
+  const prevIsGenerating = useRef(isGenerating);
+  // Track if we've auto-played this audio already
+  const hasAutoPlayed = useRef(false);
 
   // Cleanup audio URL when component unmounts or URL changes
   useEffect(() => {
@@ -67,6 +71,7 @@ export function AudioPlayer({
       setIsPlaying(false);
       setDuration(0);
       setIsReady(false);
+      hasAutoPlayed.current = false; // Reset auto-play flag for new audio
 
       // Keep the visual continuity by using the streaming position
       if (pendingSeekPosition.current > 0 && !hasAppliedInitialSeek.current) {
@@ -82,8 +87,14 @@ export function AudioPlayer({
       setIsReady(false);
       hasAppliedInitialSeek.current = false;
       pendingSeekPosition.current = 0;
+      hasAutoPlayed.current = false;
     }
   }, [audioUrl]);
+
+  // Track when we transition from generating to ready
+  useEffect(() => {
+    prevIsGenerating.current = isGenerating;
+  }, [isGenerating]);
 
   const handleLoadedMetadata = useCallback(() => {
     if (audioRef.current) {
@@ -112,6 +123,21 @@ export function AudioPlayer({
         }).catch(err => {
           console.log('🎵 Auto-play blocked, user can click play:', err);
         });
+        hasAutoPlayed.current = true;
+      } else if (prevIsGenerating.current && !hasAutoPlayed.current) {
+        // Only auto-play if we just transitioned from generating state
+        // AND we haven't auto-played this audio yet
+        console.log('🎵 Auto-playing newly generated audio (Kokoro)');
+        audioRef.current.play().then(() => {
+          setIsPlaying(true);
+        }).catch(err => {
+          console.log('🎵 Auto-play blocked, user can click play:', err);
+        });
+        hasAutoPlayed.current = true;
+      } else {
+        // Audio already exists (loading old messages or switching chat sessions)
+        // Don't auto-play
+        console.log('🎵 Audio ready but not auto-playing (existing audio)');
       }
     }
   }, [onStopChunkPlayback]);
@@ -202,11 +228,10 @@ export function AudioPlayer({
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-300 ease-out ${
-                isStreamingPaused
-                  ? 'bg-gray-400'
-                  : 'bg-gradient-to-r from-blue-500 to-indigo-600'
-              }`}
+              className={`h-full rounded-full transition-all duration-300 ease-out ${isStreamingPaused
+                ? 'bg-gray-400'
+                : 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                }`}
               style={{ width: `${progressPercent}%` }}
             />
           </div>

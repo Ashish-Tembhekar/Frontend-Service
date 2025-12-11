@@ -25,22 +25,46 @@ interface TTSControlPanelProps {
 
 // Hardcoded list of high-quality Kokoro voices from VOICES.txt
 const KOKORO_VOICES = [
+  // US English Voices
   { id: "af_heart", name: "Heart (US Female)", lang: "en-us" },
   { id: "af_bella", name: "Bella (US Female)", lang: "en-us" },
   { id: "af_nicole", name: "Nicole (US Female)", lang: "en-us" },
   { id: "af_sarah", name: "Sarah (US Female)", lang: "en-us" },
   { id: "af_sky", name: "Sky (US Female)", lang: "en-us" },
+  { id: "af_alloy", name: "Alloy (US Female)", lang: "en-us" },
+  { id: "af_jessica", name: "Jessica (US Female)", lang: "en-us" },
+  { id: "af_river", name: "River (US Female)", lang: "en-us" },
   { id: "am_adam", name: "Adam (US Male)", lang: "en-us" },
   { id: "am_michael", name: "Michael (US Male)", lang: "en-us" },
+  { id: "am_eric", name: "Eric (US Male)", lang: "en-us" },
+
+  // British English Voices
   { id: "bf_emma", name: "Emma (UK Female)", lang: "en-gb" },
   { id: "bf_isabella", name: "Isabella (UK Female)", lang: "en-gb" },
   { id: "bm_george", name: "George (UK Male)", lang: "en-gb" },
   { id: "bm_lewis", name: "Lewis (UK Male)", lang: "en-gb" },
+
+  // French Voices
   { id: "ff_siwis", name: "Siwis (French Female)", lang: "fr" },
+
+  // Spanish Voices
   { id: "ef_dora", name: "Dora (Spanish Female)", lang: "es" },
   { id: "em_alex", name: "Alex (Spanish Male)", lang: "es" },
+
+  // Japanese Voices
   { id: "jf_alpha", name: "Alpha (Japanese Female)", lang: "ja" },
+
+  // Chinese Voices
   { id: "zf_xiaobei", name: "Xiaobei (Chinese Female)", lang: "zh" },
+
+  // Hindi Voices
+  { id: "hf_alpha", name: "Alpha (Hindi Female)", lang: "hi" },
+
+  // Italian Voices
+  { id: "if_alpha", name: "Alpha (Italian Female)", lang: "it" },
+
+  // Portuguese Voices
+  { id: "pf_alpha", name: "Alpha (Portuguese Female)", lang: "pt" },
 ];
 
 export function TTSControlPanel({
@@ -51,13 +75,13 @@ export function TTSControlPanel({
   onCfgWeightChange,
   onRefAudioChange,
 }: TTSControlPanelProps) {
-  const { 
-    ttsProvider, 
+  const {
+    ttsProvider,
     setTtsProvider,
     kokoroVoice,
     setKokoroVoice,
     kokoroSpeed,
-    setKokoroSpeed 
+    setKokoroSpeed
   } = useChat();
 
   const [refAudioFiles, setRefAudioFiles] = useState<RefAudioFile[]>([]);
@@ -122,7 +146,7 @@ export function TTSControlPanel({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        
+
         <Tabs defaultValue="chatterbox" value={ttsProvider} onValueChange={(val) => setTtsProvider(val as 'chatterbox' | 'kokoro')} className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="chatterbox" className="flex items-center gap-2">
