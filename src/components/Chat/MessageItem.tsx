@@ -54,7 +54,7 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
       </TooltipProvider>
     );
   }
-  
+
   if (!isUser && message.isLoading) {
     return (
       <div className="flex justify-start py-6">
@@ -65,7 +65,9 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
               <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
               <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
             </div>
-            <span className="text-sm text-gray-600 font-medium">Thinking...</span>
+            <span className="text-sm text-gray-600 font-medium">
+              {message.processingStatus || 'Thinking...'}
+            </span>
           </div>
         </div>
       </div>
@@ -81,14 +83,13 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
           </div>
         </div>
       )}
-      
+
       <div className={`flex flex-col max-w-[80%] ${isUser ? 'items-end' : 'items-start'} w-full`}>
         <div
-          className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 w-full ${
-            isUser
+          className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 w-full ${isUser
               ? 'bg-gray-700 text-white'
               : 'bg-gray-100 text-gray-900'
-          }`}
+            }`}
         >
           {isUser ? (
             <MarkdownRenderer content={message.content} />

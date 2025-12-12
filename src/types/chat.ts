@@ -12,6 +12,7 @@ export interface Message {
   contentType?: 'text' | 'html'; // Explicitly define content type
   timestamp: string; // ISO string
   isLoading?: boolean; // For assistant messages being generated
+  processingStatus?: string; // For showing granular LLM processing status
   audioData?: AudioData | null; // For assistant voice responses (legacy)
   audioUrl?: string; // The URL created from the merged TTS Blob for persistent playback
   isAudioGenerating?: boolean; // To show loading/streaming state in the AudioPlayer UI
@@ -118,7 +119,7 @@ export interface AskQuestionResponse {
  * Represents the response from the POST /transcribe/ endpoint.
  */
 export interface TranscribeResponse {
-    original_text: string;
-    detected_language: string;
-    translated_text: string;
+  original_text: string;
+  detected_language: string;
+  translated_text: string;
 }

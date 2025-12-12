@@ -12,6 +12,8 @@ import { useAuth } from './AuthContext';
 import { logUsageToFirestore, logTTSUsageToFirestore, type TTSUsageData } from '../services/usageLogger';
 import { db } from '../lib/firebase/config';
 import { getAudio, saveAudio } from '../services/audioStorage';
+import { useWebSocket } from '../hooks/useWebSocket';
+import { appConfig } from '../lib/config';
 
 interface ChatContextType {
     chatThreads: ChatThread[];
@@ -137,10 +139,29 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const streamingAudio = useStreamingAudio(handleAudioComplete);
     const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
 
+    // WebSocket for status updates (including LLM processing status)
+    const wsUrl = appConfig.fastApiBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/updates';
+    const { lastMessage: wsLastMessage } = useWebSocket(wsUrl);
+
     // Role config
     const [chatbotRole, setChatbotRole] = useLocalStorage('nexus_chatbot_role_v1', 'Helpful Document Assistant');
     const [systemPrompt, setSystemPrompt] = useLocalStorage('nexus_system_prompt_v1', 'You are a helpful document assistant. Provide clear, accurate, and concise answers based on the provided documents.');
     const [isLoadingRoleConfig, setIsLoadingRoleConfig] = useState(false);
+
+    // Handle WebSocket messages for LLM status updates
+    useEffect(() => {
+        if (wsLastMessage && wsLastMessage.type === 'llm_status_update') {
+            const { question_id, status } = wsLastMessage;
+            if (question_id && status) {
+                // Update the processing status of the loading assistant message
+                setMessages(prev => prev.map(msg =>
+                    msg.isLoading && msg.role === 'assistant'
+                        ? { ...msg, processingStatus: status }
+                        : msg
+                ));
+            }
+        }
+    }, [wsLastMessage]);
 
     useEffect(() => {
         const loadRoleConfig = async () => {

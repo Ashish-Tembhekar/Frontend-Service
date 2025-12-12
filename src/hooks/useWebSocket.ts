@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface WebSocketMessage {
-  type: 'status_update' | 'processing_event' | 'file_deleted' | 'job_status_update' | 'pdf_processing_complete' | 'pdf_processing_failed' | 'heartbeat' | 'pong' | 'user_connected' | 'user_disconnected';
+  type: 'status_update' | 'processing_event' | 'file_deleted' | 'job_status_update' | 'pdf_processing_complete' | 'pdf_processing_failed' | 'heartbeat' | 'pong' | 'user_connected' | 'user_disconnected' | 'llm_status_update';
   file_uuid?: string;
   document_uuid?: string;
   file_name?: string;
@@ -15,6 +15,7 @@ interface WebSocketMessage {
   job_id?: string;
   user_id?: string;
   session_id?: string;
+  question_id?: string;
   timestamp: string;
 }
 
@@ -32,7 +33,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'reconnecting'>('disconnected');
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
-  
+
   // Persistent user_id across pages/refreshes, stored in localStorage
   const [userId] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -42,27 +43,27 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         return existingUserId;
       }
     }
-    
+
     const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     if (typeof window !== 'undefined') {
       localStorage.setItem('chatbot_user_id', newUserId);
       console.log('👤 Created new user ID and saved to localStorage:', newUserId.slice(-8));
     }
-    
+
     return newUserId;
   });
-  
+
   // New session_id for each WebSocket connection (page visit/refresh)
   const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
-  
+
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const isManualClose = useRef(false);
   const lastHeartbeatRef = useRef<number>(Date.now());
-  
+
   // Configuration constants
   const maxReconnectAttempts = 10;
   const baseReconnectDelay = 1000; // Start with 1 second
@@ -94,30 +95,30 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
   const startHeartbeat = useCallback(() => {
     clearTimeouts();
-    
+
     const sendHeartbeat = () => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         const now = Date.now();
-        
+
         // Check if we haven't received a heartbeat response in too long
         if (now - lastHeartbeatRef.current > heartbeatTimeout) {
           console.warn('💔 Heartbeat timeout - connection appears dead');
           wsRef.current.close();
           return;
         }
-        
-        wsRef.current.send(JSON.stringify({ 
-          type: 'ping', 
+
+        wsRef.current.send(JSON.stringify({
+          type: 'ping',
           user_id: userId,
           session_id: sessionId,
           timestamp: now.toString()
         }));
-        
+
         // Schedule next heartbeat
         heartbeatTimeoutRef.current = setTimeout(sendHeartbeat, heartbeatInterval);
       }
     };
-    
+
     // Start heartbeat cycle
     heartbeatTimeoutRef.current = setTimeout(sendHeartbeat, heartbeatInterval);
   }, [userId, sessionId, clearTimeouts]);
@@ -130,7 +131,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     try {
       setConnectionStatus('connecting');
       console.log(`🔌 Attempting WebSocket connection (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
-      
+
       // Add user identification to WebSocket URL
       const wsUrl = `${url}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`;
       const ws = new WebSocket(wsUrl);
@@ -151,7 +152,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         reconnectAttemptsRef.current = 0; // Reset attempts on successful connection
         lastHeartbeatRef.current = Date.now();
         startHeartbeat(); // Start heartbeat
-        
+
         // Send initial user registration
         ws.send(JSON.stringify({
           type: 'user_register',
@@ -164,19 +165,19 @@ export function useWebSocket(url: string): UseWebSocketReturn {
       ws.onmessage = (event) => {
         try {
           const data: WebSocketMessage = JSON.parse(event.data);
-          
+
           // Handle heartbeat response
           if (data.type === 'heartbeat' || data.type === 'pong') {
             lastHeartbeatRef.current = Date.now();
             console.log('💓 WebSocket heartbeat received');
             return;
           }
-          
+
           // Only process messages intended for this user or broadcast messages
           if (data.user_id && data.user_id !== userId && data.type !== 'user_connected' && data.type !== 'user_disconnected') {
             return; // Skip messages for other users
           }
-          
+
           console.log('📨 WebSocket message received:', data);
           setLastMessage(data);
         } catch (error) {
@@ -189,9 +190,9 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         clearTimeout(connectionTimeout);
         clearTimeouts();
         setIsConnected(false);
-        
+
         console.log(`🔌 WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
-        
+
         if (isManualClose.current) {
           setConnectionStatus('disconnected');
           return;
@@ -202,7 +203,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
           setConnectionStatus('reconnecting');
           const delay = getReconnectDelay();
           console.log(`🔄 Scheduling reconnection in ${Math.round(delay)}ms`);
-          
+
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttemptsRef.current++;
             connectWebSocket();
@@ -283,10 +284,10 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     }
   }, []);
 
-  return { 
-    isConnected, 
-    lastMessage, 
-    sendMessage, 
+  return {
+    isConnected,
+    lastMessage,
+    sendMessage,
     connectionStatus,
     userId,
     sessionId,
