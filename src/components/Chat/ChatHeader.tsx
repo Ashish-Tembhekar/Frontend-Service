@@ -12,7 +12,7 @@ interface ChatHeaderProps {
   isPopupMode?: boolean;
 }
 
-export function ChatHeader({ isPopupMode = false }: ChatHeaderProps) {
+export function ChatHeader({ isPopupMode = true }: ChatHeaderProps) {
   const { toggleHistoryPanel, isHistoryPanelOpen, startNewChat } = useChat();
 
   return (

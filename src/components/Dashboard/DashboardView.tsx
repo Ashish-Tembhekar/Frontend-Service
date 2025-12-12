@@ -583,7 +583,7 @@ export function DashboardView() {
                             {getStatusBadge(file.status)}
                           </div>
                           <div className="flex items-center space-x-2">
-                            <Button
+                            {/* <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleViewChunks(file)}
@@ -599,7 +599,7 @@ export function DashboardView() {
                               onClick={() => setSelectedFile(file)}
                             >
                               Details
-                            </Button>
+                            </Button> */}
                             <Button
                               variant="outline"
                               size="sm"

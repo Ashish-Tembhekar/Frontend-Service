@@ -3,85 +3,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
-import { X, Mic, MicOff, Volume2 } from 'lucide-react';
+import { X, Mic, MicOff } from 'lucide-react';
 import { useChat } from '@/contexts/ChatContext';
 import { useToast } from '@/hooks/use-toast';
 import { transcribeAndAskStreamingAPI } from '@/services/apiClientNew';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { logUsageToFirestore } from '@/services/usageLogger';
-
-// Lottie Animation Component (unchanged)
-const LottieAnimation = ({
-  animationUrl,
-  isPlaying = true,
-  loop = true,
-  className = "",
-  speed = 1
-}: {
-  animationUrl: string;
-  isPlaying?: boolean;
-  loop?: boolean;
-  className?: string;
-  speed?: number;
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const animationRef = useRef<any>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && containerRef.current && animationUrl) {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js';
-      script.onload = () => {
-        if (containerRef.current && !animationRef.current && (window as any).lottie) {
-          fetch(animationUrl)
-            .then(response => response.json())
-            .then(animationData => {
-              animationRef.current = (window as any).lottie.loadAnimation({
-                container: containerRef.current,
-                renderer: 'svg',
-                loop: loop,
-                autoplay: isPlaying,
-                animationData: animationData,
-              });
-              animationRef.current.setSpeed(speed);
-            })
-            .catch(() => {
-              if (containerRef.current) {
-                containerRef.current.innerHTML = '<div class="w-32 h-32 bg-gray-600 rounded-full animate-pulse"></div>';
-              }
-            });
-        }
-      };
-
-      if (!(window as any).lottie) {
-        document.head.appendChild(script);
-      } else {
-        script.onload(new Event('load'));
-      }
-    }
-
-    return () => {
-      if (animationRef.current) {
-        animationRef.current.destroy();
-        animationRef.current = null;
-      }
-    };
-  }, [animationUrl, loop, speed]);
-
-  useEffect(() => {
-    if (animationRef.current) {
-      if (isPlaying) {
-        animationRef.current.play();
-      } else {
-        animationRef.current.pause();
-      }
-    }
-  }, [isPlaying]);
-
-  return <div ref={containerRef} className={className} />;
-};
-
+import SiriWave from 'siriwave';
 
 interface VoiceChatFullScreenProps {
   isOpen: boolean;
@@ -98,8 +27,6 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     ttsIsPlaying,
     ttsIsStreaming,
     ttsIsConnected,
-    ttsCurrentChunk,
-    ttsTotalChunks
   } = useChat();
   const { toast } = useToast();
   const { user } = useAuth(); // Get authenticated user for usage tracking
@@ -111,15 +38,13 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const [currentAssistantText, setCurrentAssistantText] = useState('');
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0);
 
-  // CHANGED: isStreamingMode is now a constant, not a state.
-  const isStreamingMode = true;
+  // Ref for SiriWave instance and container
+  const siriWaveRef = useRef<SiriWave | null>(null);
+  const siriContainerRef = useRef<HTMLDivElement>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  // REMOVED: audioPlayerRef is no longer needed as useStreamingAudio handles playback.
-  const animationRef = useRef<number>();
   const processedMessageIdRef = useRef<string | null>(null);
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -138,13 +63,15 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const bargeInAnalyserRef = useRef<AnalyserNode | null>(null);
   const isBargeInActiveRef = useRef<boolean>(false);
 
+  // Animation frame reference for the wave update loop
+  const waveAnimationFrameRef = useRef<number | null>(null);
+  // Current audio level (0-255) from mic
+  const audioLevelRef = useRef<number>(0);
+
   useEffect(() => {
     return () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
-      }
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current);
       }
       if (silenceTimeoutRef.current) {
         clearTimeout(silenceTimeoutRef.current);
@@ -154,6 +81,13 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (siriWaveRef.current) {
+        siriWaveRef.current.stop();
+        siriWaveRef.current = null;
+      }
+      if (waveAnimationFrameRef.current) {
+        cancelAnimationFrame(waveAnimationFrameRef.current);
       }
     };
   }, []);
@@ -171,24 +105,128 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       handleAutoStartRecording();
       processedMessageIdRef.current = null;
     } else {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        mediaRecorderRef.current.stop();
-      }
-      if (silenceTimeoutRef.current) {
-        clearTimeout(silenceTimeoutRef.current);
-      }
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-        streamRef.current = null;
+      stopCleanup();
+    }
+  }, [isOpen]);
+
+  const stopCleanup = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (siriWaveRef.current) {
+      siriWaveRef.current.stop();
+      siriWaveRef.current = null;
+    }
+  };
+
+  // Initialize SiriWave when container is ready
+  useEffect(() => {
+    if (isOpen && siriContainerRef.current && !siriWaveRef.current) {
+      try {
+        console.log("Initializing SiriWave");
+        siriWaveRef.current = new SiriWave({
+          container: siriContainerRef.current,
+          width: siriContainerRef.current.offsetWidth || 600,
+          height: 400,
+          style: 'ios9',
+          speed: 0.1,
+          amplitude: 0.4,
+          autostart: true,
+        });
+      } catch (e) {
+        console.error("SiriWave initialization failed", e);
       }
     }
   }, [isOpen]);
 
-  // Connect to streaming audio when component mounts
+  // Handle resizing of the SiriWave container
+  useEffect(() => {
+    const handleResize = () => {
+      if (siriWaveRef.current && siriContainerRef.current) {
+        // SiriWave might need recreation for width changes or assume CSS handles it
+        // Check if siriwave instance has resize method? No.
+        // But the canvas style usually fits.
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Main Waveform Animation Loop
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let phase = 0;
+
+    const animateWave = () => {
+      if (!siriWaveRef.current) {
+        waveAnimationFrameRef.current = requestAnimationFrame(animateWave);
+        return;
+      }
+
+      let targetAmplitude = 0;
+      let targetSpeed = 0.1;
+
+      if (isRecordingRef.current) {
+        // Microphone Input Logic
+        // Map 0-255 audio level to amplitude
+        const level = audioLevelRef.current / 255;
+        // Make it sensitive
+        targetAmplitude = level > 0.01 ? Math.min(1.5, level * 2.5) : 0.1;
+        targetSpeed = 0.2;
+      } else if (isPlayingResponse) {
+        // TTS Playback Logic (Simulated)
+        // Create a chaotic "speaking" waveform
+        phase += 0.2;
+        const base = Math.abs(Math.sin(phase));
+        const noise = Math.random() * 0.5;
+        targetAmplitude = (base * 0.6 + noise * 0.4) + 0.2;
+        targetSpeed = 0.25;
+      } else if (isLoadingResponse || isTranscribing) {
+        // Thinking state
+        targetAmplitude = 0.2 + Math.sin(Date.now() / 400) * 0.1;
+        targetSpeed = 0.1;
+      } else {
+        // Idle
+        targetAmplitude = 0.05;
+        targetSpeed = 0.05;
+      }
+
+      // Smooth interpolation
+      const currentAmp = (siriWaveRef.current as any).amplitude || 0;
+      const newAmp = currentAmp + (targetAmplitude - currentAmp) * 0.15;
+
+      try {
+        siriWaveRef.current.setAmplitude(newAmp);
+        siriWaveRef.current.setSpeed(targetSpeed);
+      } catch (e) {
+        // Ignore errors if instance disposed
+      }
+
+      waveAnimationFrameRef.current = requestAnimationFrame(animateWave);
+    };
+
+    waveAnimationFrameRef.current = requestAnimationFrame(animateWave);
+
+    return () => {
+      if (waveAnimationFrameRef.current) {
+        cancelAnimationFrame(waveAnimationFrameRef.current);
+      }
+    };
+  }, [isOpen, isPlayingResponse, isLoadingResponse, isTranscribing]);
+
+
   // Handle streaming audio state changes
   useEffect(() => {
     if (ttsIsPlaying && !isPlayingResponse) {
@@ -318,9 +356,6 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           }
         }
 
-        // REMOVED: The conditional logic for streaming vs. traditional API call.
-        // We now *only* use the streaming API.
-        // Generate a message ID for the voice response TTS
         const voiceResponseMessageId = `msg_voice_${Date.now()}`;
 
         const response = await transcribeAndAskStreamingAPI(
@@ -329,7 +364,6 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           'auto',
           (text: string, language: string) => {
             console.log('VoiceChatFullScreen - Starting streaming TTS for:', text.substring(0, 100) + '...');
-            // + UPDATED: Pass skipPersistence = true for real-time mode
             requestTTS(text, voiceResponseMessageId, language, true);
             setIsPlayingResponse(true);
             setCurrentAssistantText(text.substring(0, 100) + (text.length > 100 ? '...' : ''));
@@ -338,7 +372,6 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           user?.uid
         );
 
-        // Log usage data to Firestore if available
         if (response.usage && user?.uid) {
           await logUsageToFirestore(user.uid, response.usage);
         }
@@ -370,10 +403,9 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             content: response.answer,
             contentType: 'html' as const,
             timestamp: new Date().toISOString(),
-            audioData: undefined, // No audio data in streaming mode response
+            audioData: undefined,
           };
 
-          // + UPDATED: Pass skipTTS = true to prevent double audio playback
           addProcessedMessages(userMessage, assistantMessage, true);
 
         } else {
@@ -433,7 +465,10 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
           sumSquares += centered * centered;
         }
         const rms = Math.sqrt(sumSquares / bufferLength);
-        setAudioLevel(Math.min(255, Math.floor(rms * 1024)));
+
+        // Update audio level ref for SiriWave
+        audioLevelRef.current = Math.min(255, Math.floor(rms * 1024));
+
         const now = Date.now();
 
         if (now - recordingStartMsRef.current > maxRecordingMs) {
@@ -476,6 +511,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       isRecordingRef.current = false;
+      audioLevelRef.current = 0; // Reset level
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -494,7 +530,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
   const startRecordingManual = async () => {
     try {
       if (isPlayingResponse) {
-        stopCurrentAudio(); // Stop streaming audio
+        stopCurrentAudio();
         setIsPlayingResponse(false);
         setCurrentAssistantText('');
         stopBargeInDetector();
@@ -517,9 +553,6 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     }
   };
 
-  // REMOVED: The useEffect hook that handled non-streaming audio playback is gone.
-  // Playback is now exclusively managed by the `useStreamingAudio` hook.
-
   const getStatusMessage = () => {
     if (isInitializing) return "Start speaking...";
     if (isRecording) return "Listening...";
@@ -527,9 +560,9 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     if (isLoadingResponse) return "Thinking...";
     if (isPlayingResponse) {
       if (ttsIsStreaming) {
-        return `Speaking... (${ttsCurrentChunk}/${ttsTotalChunks})`;
+        return `Speaking...`;
       }
-      return "Speaking...";
+      return "Processing...";
     }
     return ttsIsConnected
       ? "Tap the mic to start (Streaming Ready)"
@@ -544,36 +577,20 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
     return "text-muted-foreground";
   };
 
-  const getAnimationStyle = () => {
-    if (isRecording) {
-      const scale = 1 + (audioLevel / 255) * 0.3;
-      return { transform: `scale(${scale})`, background: 'linear-gradient(45deg, #ef4444, #f87171)', animation: 'pulse 1.5s ease-in-out infinite' };
-    } else if (isPlayingResponse) {
-      return { background: 'linear-gradient(45deg, #10b981, #34d399)', animation: 'breathe 2s ease-in-out infinite' };
-    } else if (isLoadingResponse || isTranscribing) {
-      return { background: 'linear-gradient(45deg, #3b82f6, #60a5fa)', animation: 'spin 2s linear infinite' };
-    } else {
-      return { background: 'linear-gradient(45deg, #6b7280, #9ca3af)', animation: 'slowPulse 3s ease-in-out infinite' };
-    }
-  };
-
   if (!isOpen || !isMounted) return null;
 
   const overlay = (
     <div className="fixed inset-0 z-[9999] bg-white flex flex-col items-center justify-center voice-chat-fullscreen">
-      <style jsx>{`
-        @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        @keyframes slowPulse { 0%, 100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.02); } }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
       <div className="flex flex-col items-center justify-center min-h-screen w-full">
-        <div className="flex-1 flex flex-col items-center justify-center">
-          <div className="relative flex flex-col items-center">
-            <div className="mb-12">
-              <div className="w-48 h-48 rounded-full transition-all duration-300 shadow-lg" style={getAnimationStyle()} />
+        <div className="flex-1 flex flex-col items-center justify-center w-full">
+          <div className="relative flex flex-col items-center w-full max-w-4xl">
+            {/* SiriWave Container */}
+            <div className="w-full h-64 flex items-center justify-center overflow-hidden mb-8">
+              <div ref={siriContainerRef} className="w-full h-full" />
             </div>
-            <div className="text-center">
-              <p className={`text-lg font-medium ${getStatusColor()}`}>{getStatusMessage()}</p>
+
+            <div className="text-center z-10">
+              <p className={`text-lg font-medium transition-colors duration-300 ${getStatusColor()}`}>{getStatusMessage()}</p>
             </div>
           </div>
         </div>
@@ -587,8 +604,6 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             {isRecording ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
           </Button>
 
-          {/* REMOVED: The button to toggle streaming mode has been removed. */}
-
           <Button onClick={onClose} size="icon" className="h-16 w-16 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-lg transition-all duration-200">
             <X className="h-6 w-6" />
           </Button>
@@ -599,4 +614,3 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
 
   return typeof document !== 'undefined' ? createPortal(overlay, document.body) : null;
 }
-

@@ -92,28 +92,54 @@ export function TTSControlPanel({
   // Fetch available reference audio files for Chatterbox
   useEffect(() => {
     const fetchRefAudioFiles = async () => {
+      // Only fetch if Chatterbox TTS is selected
+      if (ttsProvider !== 'chatterbox') return;
+
       setIsLoadingFiles(true);
       setError(null);
+
       try {
         const ttsServiceUrl = appConfig.chatterboxTtsUrl || 'http://localhost:7860';
-        const response = await fetch(`${ttsServiceUrl}/ref-audio-files`);
+
+        // Add timeout to prevent hanging
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+        const response = await fetch(`${ttsServiceUrl}/ref-audio-files`, {
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
-          throw new Error('Failed to fetch reference audio files');
+          throw new Error(`Failed to fetch reference audio files: ${response.status} ${response.statusText}`);
         }
+
         const data = await response.json();
         setRefAudioFiles(data.files || []);
+
       } catch (err) {
-        console.error('Error fetching reference audio files:', err);
-        // Silent fail for UI cleanliness, logs to console
+        // Silent fail - TTS service may not be running or accessible
+        // This is expected behavior when the service is offline
+        if (err instanceof Error) {
+          if (err.name === 'AbortError') {
+            console.warn('⏱️ Reference audio fetch timed out - TTS service may not be running');
+          } else {
+            console.warn('⚠️ Could not fetch reference audio files - TTS service may be offline:', err.message);
+          }
+        }
+        // Set empty array so UI still works
+        setRefAudioFiles([]);
       } finally {
         setIsLoadingFiles(false);
       }
     };
 
-    if (ttsProvider === 'chatterbox') {
-      fetchRefAudioFiles();
-    }
-  }, [appConfig.chatterboxTtsUrl, ttsProvider]);
+    fetchRefAudioFiles();
+  }, [ttsProvider]); // Removed appConfig.chatterboxTtsUrl dependency to avoid re-fetching
 
   // Cache reference audio when selected (Chatterbox specific)
   const handleRefAudioChange = async (filename: string | null) => {
