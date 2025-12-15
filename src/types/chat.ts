@@ -16,6 +16,7 @@ export interface Message {
   audioData?: AudioData | null; // For assistant voice responses (legacy)
   audioUrl?: string; // The URL created from the merged TTS Blob for persistent playback
   isAudioGenerating?: boolean; // To show loading/streaming state in the AudioPlayer UI
+  imageUrls?: string[]; // URLs of images to display with the message
 }
 
 export interface ChatThread {
@@ -98,6 +99,7 @@ export interface AskQuestionResponse {
   sources: Source[];
   audio: AudioData | null;
   usage?: UsageSummary | null; // OpenAI API usage data (only present when using OpenAI)
+  image_urls?: string[]; // URLs of relevant images from the backend
   // Fields from parallel transcribe-and-ask endpoint
   original_text?: string;
   translated_text?: string;

@@ -87,8 +87,8 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
       <div className={`flex flex-col max-w-[80%] ${isUser ? 'items-end' : 'items-start'} w-full`}>
         <div
           className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 w-full ${isUser
-              ? 'bg-gray-700 text-white'
-              : 'bg-gray-100 text-gray-900'
+            ? 'bg-gray-700 text-white'
+            : 'bg-gray-100 text-gray-900'
             }`}
         >
           {isUser ? (
@@ -155,6 +155,32 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
             );
           })()}
         </div>
+
+        {/* Images Section - Displayed between text and audio player */}
+        {!isUser && message.imageUrls && message.imageUrls.length > 0 && (
+          <div className="w-full mt-3 space-y-2">
+            {message.imageUrls.map((imageUrl, idx) => {
+              // Construct full URL if relative
+              const fullImageUrl = imageUrl.startsWith('http')
+                ? imageUrl
+                : `${appConfig.fastApiBaseUrl}${imageUrl}`;
+
+              return (
+                <div key={idx} className="rounded-lg overflow-hidden border border-gray-200 shadow-sm">
+                  <img
+                    src={fullImageUrl}
+                    alt={`Reference image ${idx + 1}`}
+                    className="w-full h-auto object-contain max-h-96"
+                    onError={(e) => {
+                      console.error(`Failed to load image: ${fullImageUrl}`);
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Audio Player - Shows for assistant messages with audio or currently generating */}
         {!isUser && (

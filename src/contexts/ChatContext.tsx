@@ -492,6 +492,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 timestamp: new Date().toISOString(),
                 audioData: null,
                 isAudioGenerating: isAudioResponseEnabled,
+                imageUrls: response.image_urls || [], // Add image URLs from response
                 ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
                 ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
             };
