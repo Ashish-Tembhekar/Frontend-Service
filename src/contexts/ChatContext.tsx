@@ -476,6 +476,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             const response = await askQuestion(userInput, conversationHistoryString, detectedLang, false, user?.uid, systemPrompt);
 
+            // Debug: Log the raw response to see if llm_sources is present
+            console.log('API Response:', response);
+            console.log('llm_sources from response:', response?.llm_sources);
+
             if (!response || !response.answer) {
                 throw new Error('No valid response received from the AI service.');
             }
@@ -493,9 +497,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 audioData: null,
                 isAudioGenerating: isAudioResponseEnabled,
                 imageUrls: response.image_urls || [], // Add image URLs from response
+                llmSources: response.llm_sources || [], // Add LLM-cited sources from response
                 ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
                 ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
             };
+
+            // Debug: Log the final message to verify llmSources is set
+            console.log('finalAssistantMessage.llmSources:', finalAssistantMessage.llmSources);
 
             setMessages(prev => {
                 const finalMessages = prev.map(m => m.id === assistantPlaceholderMessage.id ? finalAssistantMessage : m);
