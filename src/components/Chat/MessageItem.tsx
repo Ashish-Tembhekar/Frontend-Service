@@ -33,7 +33,28 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
     pauseStreamingAudio, // NEW: Get pause function
     resumeStreamingAudio, // NEW: Get resume function
     stopChunkPlayback, // NEW: Get stop chunk playback function
+    requestTTS, // NEW: Get requestTTS function for retry
+    setAudioGeneratingForMessage, // NEW: Get function to set generating state
   } = useChat();
+
+  // NEW: Handler to retry audio generation
+  const handleRetryAudio = () => {
+    if (!message.content) return;
+
+    // Immediately set generating state to show streaming UI
+    setAudioGeneratingForMessage(message.id, true);
+
+    // Extract text content from HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = message.content;
+    const textContent = tempDiv.textContent || tempDiv.innerText || '';
+
+    // Get language from message or default to 'en'
+    const lang = (message as any).detected_language || 'en';
+
+    // Request TTS regeneration (this will also trigger the streaming state in the hook)
+    requestTTS(textContent, message.id, lang);
+  };
 
   if (isSystem) {
     return (
@@ -196,7 +217,7 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
         {!isUser && (
           <div className="w-full">
             {/* Show AudioPlayer if this message has audio or is currently generating audio */}
-            {(message.audioUrl || message.isAudioGenerating || currentTtsMessageId === message.id) && (
+            {(message.audioUrl || message.isAudioGenerating || currentTtsMessageId === message.id || (currentTtsMessageId === message.id && ttsError)) && (
               <AudioPlayer
                 audioUrl={message.audioUrl}
                 isGenerating={message.isAudioGenerating || currentTtsMessageId === message.id}
@@ -209,6 +230,11 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
                 onPauseStreaming={currentTtsMessageId === message.id ? pauseStreamingAudio : undefined}
                 onResumeStreaming={currentTtsMessageId === message.id ? resumeStreamingAudio : undefined}
                 onStopChunkPlayback={currentTtsMessageId === message.id ? stopChunkPlayback : undefined}
+                error={currentTtsMessageId === message.id ? ttsError : null}
+                onRetry={handleRetryAudio}
+                onAudioLoadError={() => {
+                  console.error(`🎵 Audio failed to load for message: ${message.id}`);
+                }}
               />
             )}
           </div>

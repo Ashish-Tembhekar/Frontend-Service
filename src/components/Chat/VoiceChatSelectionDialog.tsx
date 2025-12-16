@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { RadioGroup, RadioGroupItem } from '../ui/radio-group';
 import { Label } from '../ui/label';
 import { Sparkles, MessageSquare } from 'lucide-react';
+import { appConfig } from '@/lib/config';
 
 interface VoiceChatSelectionDialogProps {
     isOpen: boolean;
@@ -19,7 +20,9 @@ export function VoiceChatSelectionDialog({
     onConfirm,
     defaultProvider = 'kokoro'
 }: VoiceChatSelectionDialogProps) {
-    const [selected, setSelected] = React.useState<'kokoro' | 'chatterbox'>(defaultProvider);
+    // Default to chatterbox if kokoro is unavailable
+    const initialProvider = appConfig.isKokoroAvailable ? defaultProvider : 'chatterbox';
+    const [selected, setSelected] = React.useState<'kokoro' | 'chatterbox'>(initialProvider);
 
     const handleConfirm = () => {
         onConfirm(selected);
@@ -45,18 +48,35 @@ export function VoiceChatSelectionDialog({
                     >
                         {/* Kokoro Option */}
                         <div>
-                            <RadioGroupItem value="kokoro" id="kokoro" className="peer sr-only" />
+                            <RadioGroupItem
+                                value="kokoro"
+                                id="kokoro"
+                                className="peer sr-only"
+                                disabled={!appConfig.isKokoroAvailable}
+                            />
                             <Label
                                 htmlFor="kokoro"
-                                className="flex items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                                className={`flex items-center justify-between rounded-md border-2 border-muted bg-popover p-4 peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary ${appConfig.isKokoroAvailable
+                                        ? 'hover:bg-accent hover:text-accent-foreground cursor-pointer'
+                                        : 'opacity-50 cursor-not-allowed'
+                                    }`}
                             >
                                 <div className="flex items-center gap-4">
                                     <div className="rounded-full bg-indigo-100 p-2 text-indigo-600">
                                         <Sparkles className="h-6 w-6" />
                                     </div>
                                     <div className="space-y-1">
-                                        <p className="font-medium leading-none">Kokoro TTS</p>
-                                        <p className="text-sm text-muted-foreground">High quality, natural sounding voices.</p>
+                                        <p className="font-medium leading-none">
+                                            Kokoro TTS
+                                            {!appConfig.isKokoroAvailable && (
+                                                <span className="ml-2 text-xs text-gray-400">(Unavailable)</span>
+                                            )}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground">
+                                            {appConfig.isKokoroAvailable
+                                                ? 'High quality, natural sounding voices.'
+                                                : 'Service not configured'}
+                                        </p>
                                     </div>
                                 </div>
                                 <div className="h-4 w-4 rounded-full border border-primary opacity-0 peer-data-[state=checked]:opacity-100 bg-primary" />

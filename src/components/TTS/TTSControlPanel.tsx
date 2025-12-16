@@ -178,8 +178,15 @@ export function TTSControlPanel({
             <TabsTrigger value="chatterbox" className="flex items-center gap-2">
               <Mic className="h-4 w-4" /> Chatterbox
             </TabsTrigger>
-            <TabsTrigger value="kokoro" className="flex items-center gap-2">
+            <TabsTrigger
+              value="kokoro"
+              className="flex items-center gap-2"
+              disabled={!appConfig.isKokoroAvailable}
+            >
               <Zap className="h-4 w-4" /> Kokoro 82M
+              {!appConfig.isKokoroAvailable && (
+                <span className="text-xs text-gray-400">(Unavailable)</span>
+              )}
             </TabsTrigger>
           </TabsList>
 

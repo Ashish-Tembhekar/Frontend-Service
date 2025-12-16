@@ -16,6 +16,10 @@ interface AudioPlayerProps {
   onPauseStreaming?: () => void; // NEW: Callback to pause streaming playback
   onResumeStreaming?: () => void; // NEW: Callback to resume streaming playback
   onStopChunkPlayback?: () => void; // NEW: Callback to stop chunk playback when transitioning
+  error?: string | null; // NEW: Error message from TTS service
+  audioError?: boolean; // NEW: Whether audio failed to load
+  onRetry?: () => void; // NEW: Callback to retry audio generation
+  onAudioLoadError?: () => void; // NEW: Callback when audio fails to load
 }
 
 export function AudioPlayer({
@@ -30,12 +34,17 @@ export function AudioPlayer({
   onPauseStreaming,
   onResumeStreaming,
   onStopChunkPlayback,
+  error = null,
+  audioError = false,
+  onRetry,
+  onAudioLoadError,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isReady, setIsReady] = useState(false);
+  const [audioLoadError, setAudioLoadError] = useState(false); // NEW: Track audio load errors
 
   // Track if we've already applied the initial seek position from streaming
   const hasAppliedInitialSeek = useRef(false);
@@ -72,6 +81,7 @@ export function AudioPlayer({
       setDuration(0);
       setIsReady(false);
       hasAutoPlayed.current = false; // Reset auto-play flag for new audio
+      setAudioLoadError(false); // NEW: Reset audio load error
 
       // Keep the visual continuity by using the streaming position
       if (pendingSeekPosition.current > 0 && !hasAppliedInitialSeek.current) {
@@ -88,6 +98,7 @@ export function AudioPlayer({
       hasAppliedInitialSeek.current = false;
       pendingSeekPosition.current = 0;
       hasAutoPlayed.current = false;
+      setAudioLoadError(false); // NEW: Reset audio load error
     }
   }, [audioUrl]);
 
@@ -198,6 +209,44 @@ export function AudioPlayer({
     }
   }, [isStreamingPaused, onPauseStreaming, onResumeStreaming]);
 
+  // NEW: Error state - show error UI with retry button
+  // Don't show error if we're currently generating (retry in progress)
+  if ((error || audioError || audioLoadError) && !isGenerating) {
+    const errorMessage = error || (audioError || audioLoadError ? 'Failed to load audio' : 'Unknown error');
+
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-red-50 to-rose-50 border border-red-300 rounded-lg shadow-sm mt-2">
+        {/* Error Icon */}
+        <div className="w-10 h-10 flex items-center justify-center rounded-full bg-red-600 text-white flex-shrink-0">
+          <span className="text-lg font-bold">!</span>
+        </div>
+
+        <div className="flex-1">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-red-700">
+              Error generating audio
+            </span>
+          </div>
+          <div className="text-xs text-red-600 mt-0.5">
+            {errorMessage}
+          </div>
+        </div>
+
+        {/* Retry Button */}
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="px-3 py-1.5 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-md hover:bg-red-50 transition-colors shadow-sm flex items-center gap-1.5"
+            aria-label="Retry audio generation"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Retry
+          </button>
+        )}
+      </div>
+    );
+  }
+
   // Streaming state - show progress bar with pause/resume controls while generating
   if (isGenerating && !audioUrl) {
     return (
@@ -258,6 +307,12 @@ export function AudioPlayer({
         onLoadedMetadata={handleLoadedMetadata}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
+        onError={(e) => {
+          console.error('🎵 Audio element failed to load:', audioUrl, e);
+          setAudioLoadError(true);
+          setIsReady(false);
+          onAudioLoadError?.();
+        }}
         preload="metadata"
       />
 

@@ -53,10 +53,13 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
   const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastHeartbeatRef = useRef<number>(Date.now());
+  const streamingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // NEW: Timeout for detecting stuck streaming
+  const lastChunkTimeRef = useRef<number>(Date.now()); // NEW: Track when last chunk was received
 
   // + NEW: Refs for audio accumulation and message tracking
   const audioBufferRef = useRef<string[]>([]); // Accumulated base64 audio chunks
   const currentMessageIdRef = useRef<string | null>(null); // Current message ID for TTS
+  const currentProviderRef = useRef<'chatterbox' | 'kokoro'>('chatterbox'); // Track current provider
   const onAudioCompleteRef = useRef<OnAudioCompleteCallback | undefined>(onAudioComplete);
 
   // + NEW: Ref to track if persistence should be skipped for current request
@@ -185,6 +188,64 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
     }
   }, []);
 
+  // NEW: Start monitoring for streaming timeout (no chunks received for 30 seconds)
+  const startStreamingTimeout = useCallback(() => {
+    // Clear any existing timeout
+    if (streamingTimeoutRef.current) {
+      clearTimeout(streamingTimeoutRef.current);
+      streamingTimeoutRef.current = null;
+    }
+
+    // Check every 5 seconds if we're stuck
+    const checkTimeout = () => {
+      const now = Date.now();
+      const timeSinceLastChunk = now - lastChunkTimeRef.current;
+      const TIMEOUT_MS = 30000; // 30 seconds
+
+      // If we're streaming/loading and haven't received a chunk in 30 seconds, it's stuck
+      setState(prev => {
+        if ((prev.isStreaming || prev.isLoading) && timeSinceLastChunk > TIMEOUT_MS) {
+          console.error('🎵 Streaming timeout detected - no chunks received for 30 seconds');
+
+          // Clear everything
+          playbackQueueRef.current = [];
+          isPlayingRef.current = false;
+          isPausedRef.current = false;
+          audioBufferRef.current = [];
+
+          if (currentAudioRef.current) {
+            currentAudioRef.current.pause();
+            currentAudioRef.current = null;
+          }
+
+          return {
+            ...prev,
+            isStreaming: false,
+            isPlaying: false,
+            isPaused: false,
+            isLoading: false,
+            error: 'Audio generation timeout - please try again',
+          };
+        }
+        return prev;
+      });
+
+      // Schedule next check
+      streamingTimeoutRef.current = setTimeout(checkTimeout, 5000);
+    };
+
+    // Start checking
+    streamingTimeoutRef.current = setTimeout(checkTimeout, 5000);
+  }, []);
+
+  // NEW: Stop monitoring for streaming timeout
+  const stopStreamingTimeout = useCallback(() => {
+    if (streamingTimeoutRef.current) {
+      clearTimeout(streamingTimeoutRef.current);
+      streamingTimeoutRef.current = null;
+    }
+  }, []);
+
   const handleWebSocketMessage = useCallback((message: any) => {
     switch (message.type) {
       case 'pong':
@@ -202,6 +263,9 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
         // Default to 0/unknown if missing
         const chunkIndex = message.chunk_index ?? 0;
         const totalChunks = message.total_chunks ?? 0;
+
+        // NEW: Update last chunk time to prevent timeout
+        lastChunkTimeRef.current = Date.now();
 
         console.log(`🎵 Received audio chunk ${chunkIndex + 1}/${totalChunks || '?'}`);
 
@@ -247,6 +311,7 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
         // + Check if this is the final chunk 
         if (message.is_final) {
           console.log('🎵 Final chunk received, merging audio...');
+          stopStreamingTimeout(); // NEW: Stop timeout monitoring when complete
 
           try {
             const mergedBlob = mergeWavChunks(audioBufferRef.current);
@@ -258,8 +323,9 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
             // + Check skipPersistence flag
             if (messageId && !skipPersistenceRef.current) {
               // Save to IndexedDB only if skipPersistence is false
-              saveAudio(messageId, mergedBlob).then(() => {
-                console.log(`🎵 Audio saved to IndexedDB for message: ${messageId}`);
+              // Pass the current provider to ensure correct storage key
+              saveAudio(messageId, mergedBlob, currentProviderRef.current).then(() => {
+                console.log(`🎵 Audio saved to IndexedDB for message: ${messageId} (provider: ${currentProviderRef.current})`);
               }).catch(err => console.error(err));
             } else {
               console.log(`🎵 Skipping audio persistence for message: ${messageId} (Real-time mode)`);
@@ -283,13 +349,14 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
         console.error('🎵 TTS service error:', message.error);
         // Clear the audio buffer on error
         audioBufferRef.current = [];
+        stopStreamingTimeout(); // NEW: Stop timeout monitoring on error
         setState(prev => ({ ...prev, error: message.error, isStreaming: false, isPlaying: false, isLoading: false }));
         break;
 
       default:
         console.log('🎵 Unknown message from TTS service:', message.type);
     }
-  }, [playNextChunk]);
+  }, [playNextChunk, stopStreamingTimeout]);
 
   // NEW: Connect function now accepts provider
   const connect = useCallback((provider: 'chatterbox' | 'kokoro' = 'chatterbox') => {
@@ -410,8 +477,9 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
     playbackQueueRef.current = [];
     isPlayingRef.current = false;
     isPausedRef.current = false; // Reset paused state when stopping
+    stopStreamingTimeout(); // NEW: Stop timeout monitoring
     setState(prev => ({ ...prev, isPlaying: false, isStreaming: false, isPaused: false }));
-  }, []);
+  }, [stopStreamingTimeout]);
 
   // NEW: Pause the audio playback (chunks continue to accumulate in queue)
   const pauseAudio = useCallback(() => {
@@ -557,6 +625,7 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
     // + Reset the audio buffer and paused state for the new request
     audioBufferRef.current = [];
     currentMessageIdRef.current = messageId;
+    currentProviderRef.current = provider; // Track which provider is being used
     isPausedRef.current = false; // Reset paused state for new request
 
     // + Store skipPersistence flag
@@ -565,6 +634,10 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
     // + Reset playback position tracking for new request
     completedChunksDurationRef.current = 0;
     currentChunkStartTimeRef.current = null;
+
+    // NEW: Reset last chunk time and start timeout monitoring
+    lastChunkTimeRef.current = Date.now();
+    startStreamingTimeout();
 
     // + Revoke any previous merged audio URL to prevent memory leaks
     setState(prev => {
@@ -616,11 +689,12 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
     }
 
     wsRef.current.send(JSON.stringify(request));
-  }, [stopAudio, connect]);
+  }, [stopAudio, connect, startStreamingTimeout]);
 
   const disconnect = useCallback(() => {
     stopAudio();
     stopHeartbeat();
+    stopStreamingTimeout(); // NEW: Stop timeout monitoring on disconnect
 
     // + Clear audio buffer and paused state
     audioBufferRef.current = [];
@@ -666,7 +740,7 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback) {
         streamingPlaybackPosition: 0, // Reset playback position
       };
     });
-  }, [stopAudio, stopHeartbeat]);
+  }, [stopAudio, stopHeartbeat, stopStreamingTimeout]);
 
   useEffect(() => {
     // Cleanup function to disconnect when component unmounts

@@ -18,5 +18,9 @@ export const appConfig = {
   maxFileSizeMB: parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE_MB || "50"),
   maxPdfSizeMB: parseInt(process.env.NEXT_PUBLIC_MAX_PDF_SIZE_MB || "2"),
 
-  kokoroTtsUrl: process.env.NEXT_PUBLIC_KOKORO_TTS_URL || "https://xxvzsj4f-8090.inc1.devtunnels.ms",
+  // Kokoro TTS URL (optional - only available if env var is set)
+  kokoroTtsUrl: process.env.NEXT_PUBLIC_KOKORO_TTS_URL || "",
+
+  // Feature flag: Is Kokoro TTS available?
+  isKokoroAvailable: Boolean(process.env.NEXT_PUBLIC_KOKORO_TTS_URL),
 };

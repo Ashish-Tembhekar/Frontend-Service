@@ -6,11 +6,13 @@
  */
 
 const DB_NAME = 'chatbot-audio-db';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented to trigger schema update
 const STORE_NAME = 'audio-blobs';
 
 interface StoredAudio {
+  storageKey: string; // Composite key: messageId_provider
   messageId: string;
+  provider: 'chatterbox' | 'kokoro'; // Track which TTS provider generated this audio
   audioBlob: Blob;
   mimeType: string;
   createdAt: number;
@@ -42,43 +44,58 @@ function openDatabase(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
-      
-      // Create the audio store if it doesn't exist
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'messageId' });
-        store.createIndex('createdAt', 'createdAt', { unique: false });
+
+      // Delete old store if it exists (clean slate for new schema)
+      if (db.objectStoreNames.contains(STORE_NAME)) {
+        db.deleteObjectStore(STORE_NAME);
       }
+
+      // Create the audio store with composite key
+      const store = db.createObjectStore(STORE_NAME, { keyPath: 'storageKey' });
+      store.createIndex('createdAt', 'createdAt', { unique: false });
+      store.createIndex('messageId', 'messageId', { unique: false });
+      store.createIndex('provider', 'provider', { unique: false });
     };
   });
 }
 
 /**
- * Saves an audio blob to IndexedDB
+ * Saves an audio blob to IndexedDB with provider tracking
+ * Uses composite key: messageId_provider to prevent overwrites when switching TTS services
  */
-export async function saveAudio(messageId: string, blob: Blob): Promise<void> {
+export async function saveAudio(
+  messageId: string,
+  blob: Blob,
+  provider: 'chatterbox' | 'kokoro'
+): Promise<void> {
   try {
     const db = await openDatabase();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      
+
+      // Create composite key to store separate audio for each provider
+      const storageKey = `${messageId}_${provider}`;
+
       const audioData: StoredAudio = {
+        storageKey,
         messageId,
+        provider,
         audioBlob: blob,
         mimeType: blob.type || 'audio/wav',
         createdAt: Date.now(),
       };
-      
+
       const request = store.put(audioData);
-      
+
       request.onerror = () => {
         console.error('Failed to save audio:', request.error);
         reject(request.error);
       };
-      
+
       request.onsuccess = () => {
-        console.log(`Audio saved for message: ${messageId}`);
+        console.log(`🎵 Audio saved for message: ${messageId} (provider: ${provider})`);
         resolve();
       };
     });
@@ -89,28 +106,36 @@ export async function saveAudio(messageId: string, blob: Blob): Promise<void> {
 }
 
 /**
- * Retrieves an audio blob from IndexedDB
+ * Retrieves an audio blob from IndexedDB for a specific provider
  * Returns null if not found
  */
-export async function getAudio(messageId: string): Promise<Blob | null> {
+export async function getAudio(
+  messageId: string,
+  provider: 'chatterbox' | 'kokoro'
+): Promise<Blob | null> {
   try {
     const db = await openDatabase();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readonly');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(messageId);
-      
+
+      // Use composite key to get provider-specific audio
+      const storageKey = `${messageId}_${provider}`;
+      const request = store.get(storageKey);
+
       request.onerror = () => {
         console.error('Failed to get audio:', request.error);
         reject(request.error);
       };
-      
+
       request.onsuccess = () => {
         const result = request.result as StoredAudio | undefined;
         if (result) {
+          console.log(`🎵 Retrieved audio for message: ${messageId} (provider: ${provider})`);
           resolve(result.audioBlob);
         } else {
+          console.log(`🎵 No audio found for message: ${messageId} (provider: ${provider})`);
           resolve(null);
         }
       };
@@ -122,24 +147,30 @@ export async function getAudio(messageId: string): Promise<Blob | null> {
 }
 
 /**
- * Deletes an audio blob from IndexedDB
+ * Deletes an audio blob from IndexedDB for a specific provider
  */
-export async function deleteAudio(messageId: string): Promise<void> {
+export async function deleteAudio(
+  messageId: string,
+  provider: 'chatterbox' | 'kokoro'
+): Promise<void> {
   try {
     const db = await openDatabase();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
-      const request = store.delete(messageId);
-      
+
+      // Use composite key to delete provider-specific audio
+      const storageKey = `${messageId}_${provider}`;
+      const request = store.delete(storageKey);
+
       request.onerror = () => {
         console.error('Failed to delete audio:', request.error);
         reject(request.error);
       };
-      
+
       request.onsuccess = () => {
-        console.log(`Audio deleted for message: ${messageId}`);
+        console.log(`🎵 Audio deleted for message: ${messageId} (provider: ${provider})`);
         resolve();
       };
     });
@@ -155,12 +186,12 @@ export async function deleteAudio(messageId: string): Promise<void> {
 export async function clearAllAudio(): Promise<void> {
   try {
     const db = await openDatabase();
-    
+
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(STORE_NAME, 'readwrite');
       const store = transaction.objectStore(STORE_NAME);
       const request = store.clear();
-      
+
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve();
     });

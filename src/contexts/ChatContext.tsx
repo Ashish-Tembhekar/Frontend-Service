@@ -115,6 +115,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // TTS Provider State
     const [ttsProvider, setTtsProvider] = useLocalStorage<'chatterbox' | 'kokoro'>('nexus_tts_provider_v1', 'chatterbox');
 
+    // Auto-switch to Chatterbox if Kokoro is selected but unavailable
+    useEffect(() => {
+        if (ttsProvider === 'kokoro' && !appConfig.isKokoroAvailable) {
+            console.warn('⚠️ Kokoro TTS is not available (URL not configured). Switching to Chatterbox.');
+            setTtsProvider('chatterbox');
+        }
+    }, [ttsProvider, setTtsProvider]);
+
     // Chatterbox Params
     const [ttsExaggeration, setTtsExaggeration] = useLocalStorage('nexus_tts_exaggeration_v1', 0.5);
     const [ttsCfgWeight, setTtsCfgWeight] = useLocalStorage('nexus_tts_cfg_weight_v1', 0.5);
@@ -572,7 +580,17 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const restoreAudioFromCache = useCallback(async (messageId: string) => {
         try {
-            const blob = await getAudio(messageId);
+            // Try to get audio for the current TTS provider first
+            let blob = await getAudio(messageId, ttsProvider);
+            let usedProvider = ttsProvider;
+
+            // If not found, try the other provider (fallback)
+            if (!blob) {
+                const otherProvider = ttsProvider === 'chatterbox' ? 'kokoro' : 'chatterbox';
+                blob = await getAudio(messageId, otherProvider);
+                usedProvider = otherProvider;
+            }
+
             if (blob) {
                 const audioUrl = URL.createObjectURL(blob);
                 setMessages(prev => prev.map(m =>
@@ -580,12 +598,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         ? { ...m, audioUrl, isAudioGenerating: false }
                         : m
                 ));
-                console.log(`🎵 Restored audio from cache for message: ${messageId}`);
+                console.log(`🎵 Restored audio from cache for message: ${messageId} (provider: ${usedProvider})`);
+            } else {
+                console.warn(`🎵 No cached audio found for message: ${messageId} (tried both providers)`);
             }
         } catch (error) {
             console.error(`Failed to restore audio for message ${messageId}:`, error);
+            // Don't set error state here - let the AudioPlayer handle it when it tries to load
         }
-    }, []);
+    }, [ttsProvider]);
 
     const loadChatThread = useCallback(async (threadId: string) => {
         const thread = chatThreads.find(t => t.id === threadId);
