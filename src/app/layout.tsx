@@ -22,8 +22,8 @@ const lora = Lora({
 });
 
 export const metadata: Metadata = {
-  title: 'Technical AI Assistant',
-  description: 'AI Chat application by Firebase Studio',
+  title: 'ContextEdge AI',
+  description: 'AI-powered document intelligence platform',
   viewport: {
     width: 'device-width',
     initialScale: 1,
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Technical AI Assistant',
+    title: 'ContextEdge AI',
   },
   formatDetection: {
     telephone: false,
@@ -57,8 +57,8 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Technical AI Assistant" />
-        <meta name="application-name" content="Technical AI Assistant" />
+        <meta name="apple-mobile-web-app-title" content="ContextEdge AI" />
+        <meta name="application-name" content="ContextEdge AI" />
         <meta name="msapplication-TileColor" content="#3b82f6" />
         <meta name="msapplication-tap-highlight" content="no" />
       </head>
