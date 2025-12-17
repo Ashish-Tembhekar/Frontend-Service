@@ -49,7 +49,7 @@ export function TTSStatusIndicator({
                 Playing audio
               </span>
               <span className="text-xs text-gray-500">
-                {currentChunk}/{totalChunks} chunks
+                {currentChunk}/{totalChunks} chunks loaded
               </span>
             </div>
             {/* Progress Bar */}

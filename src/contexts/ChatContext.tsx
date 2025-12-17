@@ -361,14 +361,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [streamingAudio]);
 
     const toggleAudioResponse = useCallback(() => {
-        setIsAudioResponseEnabled(prev => {
-            const newState = !prev;
-            if (!newState) {
-                stopCurrentAudio();
-            }
-            return newState;
-        });
-    }, [setIsAudioResponseEnabled, stopCurrentAudio]);
+        setIsAudioResponseEnabled(prev => !prev);
+    }, [setIsAudioResponseEnabled]);
 
     // Helper to handle the actual API calls for TTS based on provider
     const handleTTSGeneration = async (text: string, messageId: string, lang: string, skipPersistence: boolean = false) => {
