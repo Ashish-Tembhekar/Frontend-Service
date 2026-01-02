@@ -1,203 +1,188 @@
 /**
- * Audio Storage Service using IndexedDB
+ * Audio Storage Service - Azure Blob Storage Implementation
  * 
- * Provides persistent storage for large audio blobs that exceed LocalStorage limits.
- * Audio is stored per messageId and can be restored across page reloads.
+ * Provides persistent storage for large audio blobs via Azure Blob Storage.
+ * Audio is stored per messageId and provider, and can be restored across sessions.
+ * 
+ * This replaces the previous IndexedDB implementation with server-side storage.
  */
 
-const DB_NAME = 'chatbot-audio-db';
-const DB_VERSION = 2; // Incremented to trigger schema update
-const STORE_NAME = 'audio-blobs';
+import {
+  uploadAudio as uploadAudioToServer,
+  getAudioUrl as getAudioUrlFromServer,
+  deleteAudio as deleteAudioFromServer
+} from './chatStorageAPI';
 
-interface StoredAudio {
-  storageKey: string; // Composite key: messageId_provider
-  messageId: string;
-  provider: 'chatterbox' | 'kokoro'; // Track which TTS provider generated this audio
-  audioBlob: Blob;
-  mimeType: string;
-  createdAt: number;
-}
-
-let dbInstance: IDBDatabase | null = null;
+// In-memory cache for audio blob URLs (to avoid repeated server calls)
+const audioCache = new Map<string, string>();
 
 /**
- * Opens or creates the IndexedDB database
+ * Generates a cache key for audio storage
  */
-function openDatabase(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (dbInstance) {
-      resolve(dbInstance);
-      return;
-    }
-
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => {
-      console.error('Failed to open audio database:', request.error);
-      reject(request.error);
-    };
-
-    request.onsuccess = () => {
-      dbInstance = request.result;
-      resolve(dbInstance);
-    };
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-
-      // Delete old store if it exists (clean slate for new schema)
-      if (db.objectStoreNames.contains(STORE_NAME)) {
-        db.deleteObjectStore(STORE_NAME);
-      }
-
-      // Create the audio store with composite key
-      const store = db.createObjectStore(STORE_NAME, { keyPath: 'storageKey' });
-      store.createIndex('createdAt', 'createdAt', { unique: false });
-      store.createIndex('messageId', 'messageId', { unique: false });
-      store.createIndex('provider', 'provider', { unique: false });
-    };
-  });
+function getCacheKey(messageId: string, provider: 'chatterbox' | 'kokoro'): string {
+  return `${messageId}_${provider}`;
 }
 
 /**
- * Saves an audio blob to IndexedDB with provider tracking
- * Uses composite key: messageId_provider to prevent overwrites when switching TTS services
+ * Saves an audio blob to Azure Blob Storage (via backend API)
+ * Falls back to in-memory cache for immediate playback
+ * 
+ * @param messageId - The message ID the audio is associated with
+ * @param blob - The audio blob to store
+ * @param provider - The TTS provider ('chatterbox' or 'kokoro')
+ * @param userId - Optional Firebase UID for server-side storage
  */
 export async function saveAudio(
   messageId: string,
   blob: Blob,
-  provider: 'chatterbox' | 'kokoro'
+  provider: 'chatterbox' | 'kokoro',
+  userId?: string
 ): Promise<void> {
   try {
-    const db = await openDatabase();
+    // Create a local blob URL for immediate use
+    const localUrl = URL.createObjectURL(blob);
+    const cacheKey = getCacheKey(messageId, provider);
+    audioCache.set(cacheKey, localUrl);
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+    console.log(`🎵 Audio cached locally for message: ${messageId} (provider: ${provider})`);
 
-      // Create composite key to store separate audio for each provider
-      const storageKey = `${messageId}_${provider}`;
-
-      const audioData: StoredAudio = {
-        storageKey,
-        messageId,
-        provider,
-        audioBlob: blob,
-        mimeType: blob.type || 'audio/wav',
-        createdAt: Date.now(),
-      };
-
-      const request = store.put(audioData);
-
-      request.onerror = () => {
-        console.error('Failed to save audio:', request.error);
-        reject(request.error);
-      };
-
-      request.onsuccess = () => {
-        console.log(`🎵 Audio saved for message: ${messageId} (provider: ${provider})`);
-        resolve();
-      };
-    });
+    // If we have a userId, also upload to server for persistence
+    if (userId) {
+      try {
+        await uploadAudioToServer(userId, messageId, provider, blob);
+        console.log(`🎵 Audio saved to Azure Blob Storage for message: ${messageId} (provider: ${provider})`);
+      } catch (uploadError) {
+        console.warn(`🎵 Failed to upload audio to server (will use local cache): ${uploadError}`);
+        // Continue without throwing - local cache still works
+      }
+    }
   } catch (error) {
-    console.error('Error saving audio to IndexedDB:', error);
+    console.error('Error saving audio:', error);
     throw error;
   }
 }
 
 /**
- * Retrieves an audio blob from IndexedDB for a specific provider
+ * Retrieves an audio blob from Azure Blob Storage or local cache
  * Returns null if not found
+ * 
+ * @param messageId - The message ID
+ * @param provider - The TTS provider ('chatterbox' or 'kokoro')
+ * @param userId - Optional Firebase UID for server-side storage
  */
 export async function getAudio(
   messageId: string,
-  provider: 'chatterbox' | 'kokoro'
+  provider: 'chatterbox' | 'kokoro',
+  userId?: string
 ): Promise<Blob | null> {
   try {
-    const db = await openDatabase();
+    const cacheKey = getCacheKey(messageId, provider);
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-
-      // Use composite key to get provider-specific audio
-      const storageKey = `${messageId}_${provider}`;
-      const request = store.get(storageKey);
-
-      request.onerror = () => {
-        console.error('Failed to get audio:', request.error);
-        reject(request.error);
-      };
-
-      request.onsuccess = () => {
-        const result = request.result as StoredAudio | undefined;
-        if (result) {
-          console.log(`🎵 Retrieved audio for message: ${messageId} (provider: ${provider})`);
-          resolve(result.audioBlob);
-        } else {
-          console.log(`🎵 No audio found for message: ${messageId} (provider: ${provider})`);
-          resolve(null);
+    // Check local cache first
+    const cachedUrl = audioCache.get(cacheKey);
+    if (cachedUrl) {
+      try {
+        const response = await fetch(cachedUrl);
+        if (response.ok) {
+          console.log(`🎵 Retrieved audio from local cache for message: ${messageId} (provider: ${provider})`);
+          return response.blob();
         }
-      };
-    });
+      } catch {
+        // Cache entry invalid, remove it
+        audioCache.delete(cacheKey);
+      }
+    }
+
+    // Try to fetch from server if userId is available
+    if (userId) {
+      try {
+        const sasUrl = await getAudioUrlFromServer(userId, messageId, provider);
+        if (sasUrl) {
+          const response = await fetch(sasUrl);
+          if (response.ok) {
+            const blob = await response.blob();
+
+            // Cache the result locally for subsequent accesses
+            const localUrl = URL.createObjectURL(blob);
+            audioCache.set(cacheKey, localUrl);
+
+            console.log(`🎵 Retrieved audio from Azure Blob Storage for message: ${messageId} (provider: ${provider})`);
+            return blob;
+          }
+        }
+      } catch (fetchError) {
+        console.warn(`🎵 Failed to fetch audio from server: ${fetchError}`);
+      }
+    }
+
+    console.log(`🎵 No audio found for message: ${messageId} (provider: ${provider})`);
+    return null;
   } catch (error) {
-    console.error('Error getting audio from IndexedDB:', error);
+    console.error('Error getting audio:', error);
     return null;
   }
 }
 
 /**
- * Deletes an audio blob from IndexedDB for a specific provider
+ * Deletes an audio blob from Azure Blob Storage
+ * 
+ * @param messageId - The message ID
+ * @param provider - The TTS provider ('chatterbox' or 'kokoro')
+ * @param userId - Optional Firebase UID for server-side storage
  */
 export async function deleteAudio(
   messageId: string,
-  provider: 'chatterbox' | 'kokoro'
+  provider: 'chatterbox' | 'kokoro',
+  userId?: string
 ): Promise<void> {
   try {
-    const db = await openDatabase();
+    const cacheKey = getCacheKey(messageId, provider);
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
+    // Remove from local cache
+    const cachedUrl = audioCache.get(cacheKey);
+    if (cachedUrl) {
+      URL.revokeObjectURL(cachedUrl);
+      audioCache.delete(cacheKey);
+    }
 
-      // Use composite key to delete provider-specific audio
-      const storageKey = `${messageId}_${provider}`;
-      const request = store.delete(storageKey);
-
-      request.onerror = () => {
-        console.error('Failed to delete audio:', request.error);
-        reject(request.error);
-      };
-
-      request.onsuccess = () => {
-        console.log(`🎵 Audio deleted for message: ${messageId} (provider: ${provider})`);
-        resolve();
-      };
-    });
+    // Delete from server if userId is available
+    if (userId) {
+      try {
+        await deleteAudioFromServer(userId, messageId, provider);
+        console.log(`🎵 Audio deleted from Azure Blob Storage for message: ${messageId} (provider: ${provider})`);
+      } catch (deleteError) {
+        console.warn(`🎵 Failed to delete audio from server: ${deleteError}`);
+      }
+    }
   } catch (error) {
-    console.error('Error deleting audio from IndexedDB:', error);
+    console.error('Error deleting audio:', error);
     throw error;
   }
 }
 
 /**
- * Clears all audio from IndexedDB (useful for cleanup)
+ * Clears all cached audio URLs (useful for cleanup)
+ * Note: This only clears the local cache, not the server storage
  */
 export async function clearAllAudio(): Promise<void> {
   try {
-    const db = await openDatabase();
-
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(STORE_NAME, 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.clear();
-
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve();
+    // Revoke all cached blob URLs
+    audioCache.forEach((url) => {
+      URL.revokeObjectURL(url);
     });
+    audioCache.clear();
+    console.log('🎵 All local audio cache cleared');
   } catch (error) {
-    console.error('Error clearing audio from IndexedDB:', error);
+    console.error('Error clearing audio cache:', error);
     throw error;
   }
 }
 
+/**
+ * Legacy function for backward compatibility
+ * The IndexedDB implementation is replaced with Azure Blob Storage
+ */
+export function openDatabase(): Promise<IDBDatabase> {
+  console.warn('🎵 openDatabase is deprecated - audio is now stored in Azure Blob Storage');
+  return Promise.reject(new Error('IndexedDB audio storage is deprecated'));
+}
