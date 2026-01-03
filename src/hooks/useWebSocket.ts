@@ -54,8 +54,25 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     return newUserId;
   });
 
-  // New session_id for each WebSocket connection (page visit/refresh)
-  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+  // Session ID persisted in sessionStorage (survives refresh, clears on tab close)
+  const [sessionId] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const existingSessionId = sessionStorage.getItem('chatbot_session_id');
+      if (existingSessionId) {
+        console.log('📋 Loaded existing session ID from sessionStorage:', existingSessionId.slice(-8));
+        return existingSessionId;
+      }
+    }
+
+    const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('chatbot_session_id', newSessionId);
+      console.log('📋 Created new session ID and saved to sessionStorage:', newSessionId.slice(-8));
+    }
+
+    return newSessionId;
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -280,7 +297,8 @@ export function useWebSocket(url: string): UseWebSocketReturn {
   const clearUserSession = useCallback(() => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('chatbot_user_id');
-      console.log('🗑️ User session cleared from localStorage');
+      sessionStorage.removeItem('chatbot_session_id');
+      console.log('🗑️ User session cleared from localStorage and sessionStorage');
     }
   }, []);
 

@@ -5,7 +5,7 @@ import { ChatView } from '../components/Chat/ChatView';
 import { ChatHistoryPanel } from '../components/Chat/History/ChatHistoryPanel';
 import { useChat } from '../contexts/ChatContext'; // Import useChat
 import { useAuth } from '../contexts/AuthContext';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocketContext } from '../contexts/WebSocketContext';
 import { appConfig } from '../lib/config';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { useEffect } from 'react';
@@ -30,9 +30,8 @@ export default function FullScreenChatPage() {
     }
   }, [user, loading, router]);
 
-  // WebSocket connection for real-time chat updates
-  const wsUrl = appConfig.fastApiBaseUrl.replace('http', 'ws') + '/ws/dashboard';
-  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocket(wsUrl);
+  // Use shared WebSocket connection from context
+  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocketContext();
 
   // Debug WebSocket connection
   useEffect(() => {
@@ -71,9 +70,8 @@ export default function FullScreenChatPage() {
         <ChatHistoryPanel />
 
         {/* Main chat area - full width when sidebar closed */}
-        <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${
-          isHistoryPanelOpen ? 'ml-0' : ''
-        }`}>
+        <div className={`flex-1 flex flex-col transition-all duration-300 ease-in-out ${isHistoryPanelOpen ? 'ml-0' : ''
+          }`}>
           <ChatView />
         </div>
       </main>

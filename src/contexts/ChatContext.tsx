@@ -21,7 +21,7 @@ import { useAuth } from './AuthContext';
 import { logUsageToFirestore, logTTSUsageToFirestore, type TTSUsageData } from '../services/usageLogger';
 import { db } from '../lib/firebase/config';
 import { getAudio, saveAudio } from '../services/audioStorage';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocketContext } from './WebSocketContext';
 import { appConfig } from '../lib/config';
 
 interface ChatContextType {
@@ -158,9 +158,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const streamingAudio = useStreamingAudio(handleAudioComplete, user?.uid);
     const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
 
-    // WebSocket for status updates (including LLM processing status)
-    const wsUrl = appConfig.fastApiBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://') + '/ws/updates';
-    const { lastMessage: wsLastMessage } = useWebSocket(wsUrl);
+    // Use shared WebSocket for status updates (including LLM processing status)
+    const { lastMessage: wsLastMessage } = useWebSocketContext();
 
     // Role config
     const [chatbotRole, setChatbotRole] = useLocalStorage('nexus_chatbot_role_v1', 'Helpful Document Assistant');

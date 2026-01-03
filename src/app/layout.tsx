@@ -4,6 +4,7 @@ import './globals.css';
 import { ChatProvider } from '../contexts/ChatContext';
 import { Toaster } from "../components/ui/toaster";
 import { AuthProvider } from '../contexts/AuthContext';
+import { WebSocketProvider } from '../contexts/WebSocketContext';
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -64,10 +65,12 @@ export default function RootLayout({
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} ${lora.variable} antialiased flex flex-col h-full overflow-hidden`}>
         <AuthProvider>
-          <ChatProvider>
-            {children}
-            <Toaster />
-          </ChatProvider>
+          <WebSocketProvider>
+            <ChatProvider>
+              {children}
+              <Toaster />
+            </ChatProvider>
+          </WebSocketProvider>
         </AuthProvider>
       </body>
     </html>

@@ -27,7 +27,7 @@ import {
   User
 } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocketContext } from '../../contexts/WebSocketContext';
 import { validateFileSize, formatFileSize } from '../../lib/utils';
 import { appConfig } from '../../lib/config';
 import Link from 'next/link';
@@ -120,17 +120,15 @@ export function DashboardView() {
   const [selectedFileForChunks, setSelectedFileForChunks] = useState<FileStats | null>(null);
   const { toast } = useToast();
 
-  // WebSocket connection for real-time updates
-  const wsUrl = appConfig.fastApiBaseUrl.replace('http', 'ws') + '/ws/dashboard';
-  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocket(wsUrl);
-  
+  // Use shared WebSocket connection from context
+  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocketContext();
+
   // Debug WebSocket connection
   useEffect(() => {
-    console.log('🔌 WebSocket URL:', wsUrl);
     console.log('🔌 WebSocket connected:', isConnected);
     console.log('🔌 User ID:', userId);
     console.log('🔌 Session ID:', sessionId);
-  }, [wsUrl, isConnected, userId, sessionId]);
+  }, [isConnected, userId, sessionId]);
 
   // Fetch data functions
   const fetchFiles = async () => {
@@ -337,7 +335,7 @@ export function DashboardView() {
   useEffect(() => {
     if (lastMessage) {
       console.log('📨 Processing WebSocket message in DashboardView:', lastMessage);
-      
+
       // Handle user connection notifications
       if (lastMessage.type === 'user_connected') {
         console.log('👤 User connected:', lastMessage.user_id);
@@ -349,18 +347,18 @@ export function DashboardView() {
       } else if (lastMessage.type === 'user_disconnected') {
         console.log('👤 User disconnected:', lastMessage.user_id);
         toast({
-          title: "User Disconnected", 
+          title: "User Disconnected",
           description: `User ${lastMessage.user_id?.slice(-8)} left`,
           duration: 3000,
         });
       }
-      
+
       // Update files list when we receive status updates, job updates, or file deletions
-      else if (lastMessage.type === 'status_update' || 
-          lastMessage.type === 'file_deleted' || 
-          lastMessage.type === 'job_status_update' ||
-          lastMessage.type === 'pdf_processing_complete' ||
-          lastMessage.type === 'pdf_processing_failed') {
+      else if (lastMessage.type === 'status_update' ||
+        lastMessage.type === 'file_deleted' ||
+        lastMessage.type === 'job_status_update' ||
+        lastMessage.type === 'pdf_processing_complete' ||
+        lastMessage.type === 'pdf_processing_failed') {
         console.log('🔄 Refreshing data due to:', lastMessage.type);
         refreshData();
       }
@@ -376,8 +374,8 @@ export function DashboardView() {
     );
   }
 
-     return (
-     <div className="container mx-auto p-6 space-y-6 pb-8">
+  return (
+    <div className="container mx-auto p-6 space-y-6 pb-8">
       {/* Connection Status Bar */}
       <div className={`flex items-center justify-between rounded-lg border p-4 ${getConnectionStatusColor()}`}>
         <div className="flex items-center space-x-4">
@@ -387,18 +385,18 @@ export function DashboardView() {
               Real-time updates: {getConnectionStatusText()}
             </span>
           </div>
-          
+
           <div className="flex items-center space-x-2 text-sm opacity-75">
             <User className="w-3 h-3" />
             <span>User: {user?.username || user?.email || userId.slice(-8)}</span>
           </div>
         </div>
-        
+
         <div className="flex items-center space-x-2">
           {connectionStatus !== 'connected' && (
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => window.location.reload()}
               className="text-xs"
             >
@@ -406,7 +404,7 @@ export function DashboardView() {
               Refresh
             </Button>
           )}
-          
+
           {connectionStatus === 'connected' && (
             <Badge variant="secondary" className="text-xs">
               Session: {sessionId.slice(-6)}
@@ -537,13 +535,13 @@ export function DashboardView() {
           <TabsTrigger value="recent" className="data-[state=active]:bg-white data-[state=active]:text-gray-900 data-[state=active]:shadow-sm">Recent Events</TabsTrigger>
         </TabsList>
 
-                                   <TabsContent value="files" className="space-y-4">
-            <Card className="flex flex-col mb-8 bg-white border-gray-200 shadow-sm">
-             <CardHeader className="flex-shrink-0 pb-2 bg-gray-50 border-b border-gray-200">
-               <CardTitle className="text-lg text-gray-800">File List</CardTitle>
-             </CardHeader>
-             <CardContent className="flex-1 min-h-0 p-0">
-                               <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+        <TabsContent value="files" className="space-y-4">
+          <Card className="flex flex-col mb-8 bg-white border-gray-200 shadow-sm">
+            <CardHeader className="flex-shrink-0 pb-2 bg-gray-50 border-b border-gray-200">
+              <CardTitle className="text-lg text-gray-800">File List</CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 min-h-0 p-0">
+              <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
                 <div className="space-y-4 p-6 pr-8">
                   {files.length === 0 ? (
                     <div className="text-center py-8 text-gray-600">
@@ -555,7 +553,7 @@ export function DashboardView() {
                     </div>
                   ) : (
                     <>
-                                            {/* Show processing files first */}
+                      {/* Show processing files first */}
                       {files.filter(f => f.status === 'processing').length > 0 && (
                         <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg shadow-sm">
                           <div className="flex items-center gap-2 text-green-700">
@@ -571,19 +569,19 @@ export function DashboardView() {
                           </div>
                         </div>
                       )}
-                                             {files.map((file) => (
-                      <div
-                        key={file.uuid}
-                        className="border border-gray-300 rounded-lg p-4 bg-gray-100 hover:bg-gray-200 shadow-sm hover:shadow-md transition-all duration-200"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <FileText className="w-5 h-5" />
-                            <span className="font-medium">{file.file_name}</span>
-                            {getStatusBadge(file.status)}
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {/* <Button
+                      {files.map((file) => (
+                        <div
+                          key={file.uuid}
+                          className="border border-gray-300 rounded-lg p-4 bg-gray-100 hover:bg-gray-200 shadow-sm hover:shadow-md transition-all duration-200"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                              <FileText className="w-5 h-5" />
+                              <span className="font-medium">{file.file_name}</span>
+                              {getStatusBadge(file.status)}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              {/* <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleViewChunks(file)}
@@ -600,64 +598,64 @@ export function DashboardView() {
                             >
                               Details
                             </Button> */}
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeleteFile(file.uuid, file.file_name)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDeleteFile(file.uuid, file.file_name)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
-                        </div>
 
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Size:</span>
-                            <span className="ml-1">{formatFileSize(file.file_size_bytes)}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Chunks:</span>
-                            <span className="ml-1">{file.chunks_created}</span>
-                          </div>
-                          {file.file_name.toLowerCase().endsWith('.pdf') && (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                             <div>
-                              <span className="text-muted-foreground">Pages:</span>
-                              <span className="ml-1">{file.total_pages}</span>
+                              <span className="text-muted-foreground">Size:</span>
+                              <span className="ml-1">{formatFileSize(file.file_size_bytes)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Chunks:</span>
+                              <span className="ml-1">{file.chunks_created}</span>
+                            </div>
+                            {file.file_name.toLowerCase().endsWith('.pdf') && (
+                              <div>
+                                <span className="text-muted-foreground">Pages:</span>
+                                <span className="ml-1">{file.total_pages}</span>
+                              </div>
+                            )}
+                            {!file.file_name.toLowerCase().endsWith('.pdf') && (
+                              <div>
+                                <span className="text-muted-foreground">Type:</span>
+                                <span className="ml-1">{file.file_name.split('.').pop()?.toUpperCase()}</span>
+                              </div>
+                            )}
+                            <div>
+                              <span className="text-muted-foreground">Uploaded:</span>
+                              <span className="ml-1">
+                                {new Date(file.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+
+                          {file.status === 'processing' && (
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between text-sm mb-1">
+                                <span>Processing progress</span>
+                                <span>{file.progress_percentage}%</span>
+                              </div>
+                              <Progress value={file.progress_percentage} className="h-2" />
                             </div>
                           )}
-                          {!file.file_name.toLowerCase().endsWith('.pdf') && (
-                            <div>
-                              <span className="text-muted-foreground">Type:</span>
-                              <span className="ml-1">{file.file_name.split('.').pop()?.toUpperCase()}</span>
+
+                          {file.error_message && (
+                            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                              <AlertCircle className="w-4 h-4 inline mr-1" />
+                              {file.error_message}
                             </div>
                           )}
-                          <div>
-                            <span className="text-muted-foreground">Uploaded:</span>
-                            <span className="ml-1">
-                              {new Date(file.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
                         </div>
-
-                        {file.status === 'processing' && (
-                          <div className="mt-2">
-                            <div className="flex items-center justify-between text-sm mb-1">
-                              <span>Processing progress</span>
-                              <span>{file.progress_percentage}%</span>
-                            </div>
-                            <Progress value={file.progress_percentage} className="h-2" />
-                          </div>
-                        )}
-
-                        {file.error_message && (
-                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                            <AlertCircle className="w-4 h-4 inline mr-1" />
-                            {file.error_message}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      ))}
                     </>
                   )}
                 </div>
@@ -716,32 +714,32 @@ export function DashboardView() {
           )}
         </TabsContent>
 
-                                                                                                                                               <TabsContent value="recent" className="space-y-4">
-              {dashboardStats?.recent_events && (
-                <Card className="flex flex-col mb-8 bg-white border-gray-200 shadow-sm">
-                <CardHeader className="flex-shrink-0 pb-2 bg-gray-50 border-b border-gray-200">
-                  <CardTitle className="text-lg text-gray-800">Recent Events</CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1 min-h-0 p-0">
-                  <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
-                   <div className="space-y-2 p-6 pr-8">
-                     {dashboardStats.recent_events.map((event, index) => (
-                       <div key={index} className="flex items-center space-x-3 p-2 rounded border border-gray-300 bg-gray-100 hover:bg-gray-200 shadow-sm transition-colors">
-                         <div className="flex-1">
-                           <div className="font-medium">{event.file_name}</div>
-                           <div className="text-sm text-muted-foreground">{event.event_message}</div>
-                         </div>
-                         <div className="text-xs text-muted-foreground">
-                           {new Date(event.event_timestamp).toLocaleString()}
-                         </div>
-                       </div>
-                     ))}
-                   </div>
-                 </div>
-               </CardContent>
-             </Card>
-           )}
-         </TabsContent>
+        <TabsContent value="recent" className="space-y-4">
+          {dashboardStats?.recent_events && (
+            <Card className="flex flex-col mb-8 bg-white border-gray-200 shadow-sm">
+              <CardHeader className="flex-shrink-0 pb-2 bg-gray-50 border-b border-gray-200">
+                <CardTitle className="text-lg text-gray-800">Recent Events</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 min-h-0 p-0">
+                <div className="h-[250px] sm:h-[280px] md:h-[320px] lg:h-[350px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+                  <div className="space-y-2 p-6 pr-8">
+                    {dashboardStats.recent_events.map((event, index) => (
+                      <div key={index} className="flex items-center space-x-3 p-2 rounded border border-gray-300 bg-gray-100 hover:bg-gray-200 shadow-sm transition-colors">
+                        <div className="flex-1">
+                          <div className="font-medium">{event.file_name}</div>
+                          <div className="text-sm text-muted-foreground">{event.event_message}</div>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(event.event_timestamp).toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Role Configuration */}
@@ -779,7 +777,7 @@ export function DashboardView() {
                 Close
               </Button>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <h3 className="font-medium mb-2">Basic Information</h3>
