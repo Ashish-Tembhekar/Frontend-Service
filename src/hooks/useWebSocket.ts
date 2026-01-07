@@ -159,7 +159,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
           console.log('🔌 WebSocket connection timeout');
           ws.close();
         }
-      }, 10000); // 10 second connection timeout
+      }, 5000); // 5 second connection timeout (reduced from 10s)
 
       ws.onopen = () => {
         clearTimeout(connectionTimeout);

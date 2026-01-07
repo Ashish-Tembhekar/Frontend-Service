@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 import { useWebSocketContext } from '../../contexts/WebSocketContext';
-import { validateFileSize, formatFileSize } from '../../lib/utils';
+import { validateFileSize, formatFileSize, fetchWithRetry } from '../../lib/utils';
 import { appConfig } from '../../lib/config';
 import Link from 'next/link';
 import { ChunksModal } from './ChunksModal';
@@ -102,6 +102,11 @@ export function DashboardView() {
   const [uploadConfig, setUploadConfig] = useState<UploadConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [fetchErrors, setFetchErrors] = useState<{
+    files?: string;
+    stats?: string;
+    config?: string;
+  }>({});
 
   // Get auth user
   const { user } = useAuth();
@@ -130,40 +135,61 @@ export function DashboardView() {
     console.log('🔌 Session ID:', sessionId);
   }, [isConnected, userId, sessionId]);
 
-  // Fetch data functions
+  // Fetch data functions with retry logic
   const fetchFiles = async () => {
     try {
-      const response = await fetch(`${appConfig.fastApiBaseUrl}/files/`);
+      console.log('📂 Fetching files...');
+      const response = await fetchWithRetry(`${appConfig.fastApiBaseUrl}/files/`);
       if (response.ok) {
         const data = await response.json();
         setFiles(data.files || []);
+        setFetchErrors(prev => ({ ...prev, files: undefined }));
+        console.log('✅ Files fetched successfully');
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error fetching files:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ Error fetching files:', errorMsg);
+      setFetchErrors(prev => ({ ...prev, files: errorMsg }));
     }
   };
 
   const fetchDashboardStats = async () => {
     try {
-      const response = await fetch(`${appConfig.fastApiBaseUrl}/dashboard/stats`);
+      console.log('📊 Fetching dashboard stats...');
+      const response = await fetchWithRetry(`${appConfig.fastApiBaseUrl}/dashboard/stats`);
       if (response.ok) {
         const data = await response.json();
         setDashboardStats(data);
+        setFetchErrors(prev => ({ ...prev, stats: undefined }));
+        console.log('✅ Dashboard stats fetched successfully');
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ Error fetching dashboard stats:', errorMsg);
+      setFetchErrors(prev => ({ ...prev, stats: errorMsg }));
     }
   };
 
   const fetchUploadConfig = async () => {
     try {
-      const response = await fetch(`${appConfig.fastApiBaseUrl}/upload-config/`);
+      console.log('⚙️ Fetching upload config...');
+      const response = await fetchWithRetry(`${appConfig.fastApiBaseUrl}/upload-config/`);
       if (response.ok) {
         const data = await response.json();
         setUploadConfig(data);
+        setFetchErrors(prev => ({ ...prev, config: undefined }));
+        console.log('✅ Upload config fetched successfully');
+      } else {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error('Error fetching upload config:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('❌ Error fetching upload config:', errorMsg);
+      setFetchErrors(prev => ({ ...prev, config: errorMsg }));
     }
   };
 
@@ -272,20 +298,70 @@ export function DashboardView() {
     }
   };
 
-  // Initial data fetch
+  // Initial data fetch - coordinated with WebSocket connection
   useEffect(() => {
+    let mounted = true;
+    let timeoutId: NodeJS.Timeout;
+
     const fetchData = async () => {
+      if (!mounted) return;
+
+      console.log('🔄 Starting dashboard data fetch...');
+      console.log('🔌 WebSocket status:', connectionStatus, 'Connected:', isConnected);
+
       setIsLoading(true);
+
+      // Wait for WebSocket to connect, but with a timeout
+      const waitForConnection = new Promise<void>((resolve) => {
+        if (isConnected) {
+          console.log('✅ WebSocket already connected, proceeding with data fetch');
+          resolve();
+          return;
+        }
+
+        console.log('⏳ Waiting for WebSocket connection...');
+
+        // Set a timeout - if WebSocket doesn't connect in 15 seconds, proceed anyway
+        timeoutId = setTimeout(() => {
+          console.log('⚠️ WebSocket connection timeout (15s), proceeding with data fetch anyway');
+          resolve();
+        }, 15000);
+
+        // Check connection status every 500ms
+        const checkInterval = setInterval(() => {
+          if (isConnected) {
+            console.log('✅ WebSocket connected, proceeding with data fetch');
+            clearInterval(checkInterval);
+            clearTimeout(timeoutId);
+            resolve();
+          }
+        }, 500);
+      });
+
+      await waitForConnection;
+
+      if (!mounted) return;
+
+      // Fetch all data in parallel
       await Promise.all([
         fetchFiles(),
         fetchDashboardStats(),
         fetchUploadConfig(),
       ]);
-      setIsLoading(false);
+
+      if (mounted) {
+        setIsLoading(false);
+        console.log('✅ Dashboard initialization complete');
+      }
     };
 
     fetchData();
-  }, []);
+
+    return () => {
+      mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isConnected, connectionStatus]);
 
   // Connection status helper functions
   const getConnectionStatusIcon = () => {
@@ -412,6 +488,65 @@ export function DashboardView() {
           )}
         </div>
       </div>
+
+      {/* Error Banner - Show if any fetch errors occurred */}
+      {(fetchErrors.files || fetchErrors.stats || fetchErrors.config) && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-800 mb-2">
+                Failed to load some dashboard data
+              </h3>
+              <div className="space-y-1 text-sm text-red-700">
+                {fetchErrors.files && (
+                  <div className="flex items-center justify-between">
+                    <span>• Files list: {fetchErrors.files}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchFiles}
+                      className="ml-2 text-xs"
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Retry
+                    </Button>
+                  </div>
+                )}
+                {fetchErrors.stats && (
+                  <div className="flex items-center justify-between">
+                    <span>• Dashboard stats: {fetchErrors.stats}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchDashboardStats}
+                      className="ml-2 text-xs"
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Retry
+                    </Button>
+                  </div>
+                )}
+                {fetchErrors.config && (
+                  <div className="flex items-center justify-between">
+                    <span>• Upload config: {fetchErrors.config}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={fetchUploadConfig}
+                      className="ml-2 text-xs"
+                    >
+                      <RefreshCw className="w-3 h-3 mr-1" />
+                      Retry
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
