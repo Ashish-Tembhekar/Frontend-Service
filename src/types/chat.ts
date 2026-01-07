@@ -5,13 +5,6 @@ export interface AudioData {
   mime_type: string;
 }
 
-// Source citation from LLM response
-export interface LLMSource {
-  source: string;  // Document/manual name
-  page: number;    // Page number
-  section: string; // Section/heading name
-}
-
 export interface Message {
   id: string;
   role: "user" | "assistant" | "system";
@@ -24,7 +17,6 @@ export interface Message {
   audioUrl?: string; // The URL created from the merged TTS Blob for persistent playback
   isAudioGenerating?: boolean; // To show loading/streaming state in the AudioPlayer UI
   imageUrls?: string[]; // URLs of images to display with the message
-  llmSources?: LLMSource[]; // Sources cited by the LLM
 }
 
 export interface ChatThread {
@@ -105,7 +97,6 @@ export interface AskQuestionResponse {
   question: string;
   answer: string; // This is an HTML string
   sources: Source[];
-  llm_sources?: LLMSource[]; // Sources cited by the LLM (separate from document sources)
   audio: AudioData | null;
   usage?: UsageSummary | null; // OpenAI API usage data (only present when using OpenAI)
   image_urls?: string[]; // URLs of relevant images from the backend

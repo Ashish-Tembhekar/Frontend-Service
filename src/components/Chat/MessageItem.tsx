@@ -6,7 +6,6 @@ import { Bot, Loader2, User } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { AudioPlayer } from './AudioPlayer';
-import { SourcesCitation } from './SourcesCitation';
 import { useChat } from '../../contexts/ChatContext';
 
 interface MessageItemProps {
@@ -203,15 +202,6 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
             })}
           </div>
         )}
-
-        {/* Sources Section - Displayed after images, before audio player */}
-        {!isUser && (() => {
-          // Debug: log llmSources to console
-          console.log('MessageItem - llmSources:', message.llmSources, 'isUser:', isUser, 'messageId:', message.id);
-          return message.llmSources && message.llmSources.length > 0 ? (
-            <SourcesCitation sources={message.llmSources} />
-          ) : null;
-        })()}
 
         {/* Audio Player - Shows for assistant messages with audio or currently generating */}
         {!isUser && (
