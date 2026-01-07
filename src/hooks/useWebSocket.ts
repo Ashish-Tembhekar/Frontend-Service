@@ -59,7 +59,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
     if (typeof window !== 'undefined') {
       const existingSessionId = sessionStorage.getItem('chatbot_session_id');
       if (existingSessionId) {
-        console.log('📋 Loaded existing session ID from sessionStorage:', existingSessionId.slice(-8));
+        console.log('📋 [WEBSOCKET] Loaded existing session ID from sessionStorage:', existingSessionId.slice(-8));
         return existingSessionId;
       }
     }
@@ -68,7 +68,7 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
     if (typeof window !== 'undefined') {
       sessionStorage.setItem('chatbot_session_id', newSessionId);
-      console.log('📋 Created new session ID and saved to sessionStorage:', newSessionId.slice(-8));
+      console.log('📋 [WEBSOCKET] Created new session ID and saved to sessionStorage:', newSessionId.slice(-8));
     }
 
     return newSessionId;
@@ -147,23 +147,36 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
     try {
       setConnectionStatus('connecting');
-      console.log(`🔌 Attempting WebSocket connection (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
+      console.log('═══════════════════════════════════════════════════════');
+      console.log(`🔌 [WEBSOCKET] Connection attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts}`);
+      console.log(`📅 [WEBSOCKET] Timestamp: ${new Date().toISOString()}`);
+      console.log(`👤 [WEBSOCKET] User ID: ${userId.slice(-8)}`);
+      console.log(`📋 [WEBSOCKET] Session ID: ${sessionId.slice(-8)}`);
 
       // Add user identification to WebSocket URL
       const wsUrl = `${url}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`;
+      console.log(`🌐 [WEBSOCKET] Connecting to: ${wsUrl}`);
+
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       const connectionTimeout = setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) {
-          console.log('🔌 WebSocket connection timeout');
+          console.log('⏰ [WEBSOCKET] Connection timeout (5s) - closing connection');
+          console.log(`📊 [WEBSOCKET] ReadyState: ${ws.readyState}`);
           ws.close();
         }
       }, 5000); // 5 second connection timeout (reduced from 10s)
 
       ws.onopen = () => {
         clearTimeout(connectionTimeout);
-        console.log('🔌 WebSocket connected successfully');
+        const connectionTime = Date.now();
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('✅ [WEBSOCKET] Connection established successfully');
+        console.log(`📅 [WEBSOCKET] Connected at: ${new Date(connectionTime).toISOString()}`);
+        console.log(`📊 [WEBSOCKET] ReadyState: ${ws.readyState}`);
+        console.log('═══════════════════════════════════════════════════════');
+
         setIsConnected(true);
         setConnectionStatus('connected');
         reconnectAttemptsRef.current = 0; // Reset attempts on successful connection
@@ -171,12 +184,14 @@ export function useWebSocket(url: string): UseWebSocketReturn {
         startHeartbeat(); // Start heartbeat
 
         // Send initial user registration
-        ws.send(JSON.stringify({
+        const registerMessage = {
           type: 'user_register',
           user_id: userId,
           session_id: sessionId,
           timestamp: Date.now().toString()
-        }));
+        };
+        console.log('📤 [WEBSOCKET] Sending user registration:', registerMessage);
+        ws.send(JSON.stringify(registerMessage));
       };
 
       ws.onmessage = (event) => {

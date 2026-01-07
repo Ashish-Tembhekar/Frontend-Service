@@ -302,56 +302,103 @@ export function DashboardView() {
   useEffect(() => {
     let mounted = true;
     let timeoutId: NodeJS.Timeout;
+    let pollIntervalId: NodeJS.Timeout;
+    const startTime = Date.now();
 
     const fetchData = async () => {
-      if (!mounted) return;
+      if (!mounted) {
+        console.log('⚠️ [DASHBOARD] Component unmounted, aborting fetch');
+        return;
+      }
 
-      console.log('🔄 Starting dashboard data fetch...');
-      console.log('🔌 WebSocket status:', connectionStatus, 'Connected:', isConnected);
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('🚀 [DASHBOARD] Initialization started');
+      console.log(`📅 [DASHBOARD] Timestamp: ${new Date().toISOString()}`);
+      console.log(`🔌 [DASHBOARD] Initial WebSocket status:`, {
+        isConnected,
+        connectionStatus,
+        userId: userId.slice(-8),
+        sessionId: sessionId.slice(-8)
+      });
+      console.log('═══════════════════════════════════════════════════════');
 
       setIsLoading(true);
 
       // Wait for WebSocket to connect, but with a timeout
       const waitForConnection = new Promise<void>((resolve) => {
         if (isConnected) {
-          console.log('✅ WebSocket already connected, proceeding with data fetch');
+          console.log('✅ [DASHBOARD] WebSocket already connected, proceeding immediately');
           resolve();
           return;
         }
 
-        console.log('⏳ Waiting for WebSocket connection...');
+        console.log('⏳ [DASHBOARD] WebSocket not connected, starting wait sequence...');
+        console.log(`⏱️  [DASHBOARD] Will timeout after 15 seconds`);
+
+        let pollCount = 0;
+        const maxPolls = 30; // 30 * 500ms = 15 seconds
 
         // Set a timeout - if WebSocket doesn't connect in 15 seconds, proceed anyway
         timeoutId = setTimeout(() => {
-          console.log('⚠️ WebSocket connection timeout (15s), proceeding with data fetch anyway');
+          console.log('⚠️ [DASHBOARD] WebSocket connection timeout (15s), proceeding with data fetch anyway');
+          console.log(`📊 [DASHBOARD] Final status: isConnected=${isConnected}, connectionStatus=${connectionStatus}`);
           resolve();
         }, 15000);
 
         // Check connection status every 500ms
-        const checkInterval = setInterval(() => {
+        pollIntervalId = setInterval(() => {
+          pollCount++;
+          console.log(`🔄 [DASHBOARD] Poll #${pollCount}/${maxPolls}: isConnected=${isConnected}, status=${connectionStatus}`);
+
           if (isConnected) {
-            console.log('✅ WebSocket connected, proceeding with data fetch');
-            clearInterval(checkInterval);
+            const waitTime = Date.now() - startTime;
+            console.log(`✅ [DASHBOARD] WebSocket connected after ${waitTime}ms (${pollCount} polls)`);
+            clearInterval(pollIntervalId);
             clearTimeout(timeoutId);
             resolve();
           }
         }, 500);
       });
 
+      console.log('⏸️  [DASHBOARD] Awaiting WebSocket connection...');
       await waitForConnection;
 
-      if (!mounted) return;
+      if (!mounted) {
+        console.log('⚠️ [DASHBOARD] Component unmounted during wait, aborting');
+        return;
+      }
+
+      const connectionWaitTime = Date.now() - startTime;
+      console.log(`✅ [DASHBOARD] Connection wait complete after ${connectionWaitTime}ms`);
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('📡 [DASHBOARD] Starting parallel API calls...');
+      console.log('═══════════════════════════════════════════════════════');
 
       // Fetch all data in parallel
-      await Promise.all([
-        fetchFiles(),
-        fetchDashboardStats(),
-        fetchUploadConfig(),
-      ]);
+      const fetchStartTime = Date.now();
+
+      try {
+        await Promise.all([
+          fetchFiles(),
+          fetchDashboardStats(),
+          fetchUploadConfig(),
+        ]);
+
+        const fetchDuration = Date.now() - fetchStartTime;
+        console.log(`✅ [DASHBOARD] All API calls completed in ${fetchDuration}ms`);
+      } catch (error) {
+        const fetchDuration = Date.now() - fetchStartTime;
+        console.error(`❌ [DASHBOARD] API calls failed after ${fetchDuration}ms:`, error);
+      }
 
       if (mounted) {
+        const totalTime = Date.now() - startTime;
         setIsLoading(false);
-        console.log('✅ Dashboard initialization complete');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log(`✅ [DASHBOARD] Initialization complete in ${totalTime}ms`);
+        console.log('═══════════════════════════════════════════════════════');
+      } else {
+        console.log('⚠️ [DASHBOARD] Component unmounted before completion');
       }
     };
 
@@ -360,6 +407,8 @@ export function DashboardView() {
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
+      if (pollIntervalId) clearInterval(pollIntervalId);
+      console.log('🧹 [DASHBOARD] Cleanup: unmounting component');
     };
   }, [isConnected, connectionStatus]);
 
