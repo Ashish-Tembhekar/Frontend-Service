@@ -1,2 +1,0 @@
-1) Inside the directory of project run this command for generating node modules: npm i
-2) To run the project : npm run dev
