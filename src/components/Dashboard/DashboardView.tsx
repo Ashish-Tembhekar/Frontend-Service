@@ -581,23 +581,16 @@ export function DashboardView() {
                               {getStatusBadge(file.status)}
                             </div>
                             <div className="flex items-center space-x-2">
-                              {/* <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleViewChunks(file)}
-                              disabled={file.status !== 'completed'}
-                              title={file.status !== 'completed' ? 'Only available for completed files' : 'View chunks'}
-                            >
-                              <Layers className="w-4 h-4 mr-1" />
-                              Chunks
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setSelectedFile(file)}
-                            >
-                              Details
-                            </Button> */}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewChunks(file)}
+                                disabled={file.status !== 'completed'}
+                                title={file.status !== 'completed' ? 'Only available for completed files' : 'View chunks'}
+                              >
+                                <Layers className="w-4 h-4 mr-1" />
+                                Chunks
+                              </Button>
                               <Button
                                 variant="outline"
                                 size="sm"
