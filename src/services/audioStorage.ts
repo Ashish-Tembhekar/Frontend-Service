@@ -3,15 +3,11 @@
  * 
  * Provides persistent storage for large audio blobs via Azure Blob Storage.
  * Audio is stored per messageId and provider, and can be restored across sessions.
- * 
- * This replaces the previous IndexedDB implementation with server-side storage.
  */
 
-import {
-  uploadAudio as uploadAudioToServer,
-  getAudioUrl as getAudioUrlFromServer,
-  deleteAudio as deleteAudioFromServer
-} from './chatStorageAPI';
+import { appConfig } from '../lib/config';
+
+const API_BASE = appConfig.fastApiBaseUrl;
 
 // In-memory cache for audio blob URLs (to avoid repeated server calls)
 const audioCache = new Map<string, string>();
@@ -21,6 +17,90 @@ const audioCache = new Map<string, string>();
  */
 function getCacheKey(messageId: string, provider: 'chatterbox' | 'kokoro'): string {
   return `${messageId}_${provider}`;
+}
+
+/**
+ * Uploads audio to Azure Blob Storage via backend API.
+ */
+async function uploadAudioToServer(
+  userId: string,
+  messageId: string,
+  provider: 'chatterbox' | 'kokoro',
+  audioBlob: Blob
+): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', audioBlob, `${messageId}_${provider}.wav`);
+
+  const response = await fetch(
+    `${API_BASE}/api/v1/audio/upload?user_id=${encodeURIComponent(userId)}&message_id=${encodeURIComponent(messageId)}&provider=${provider}`,
+    {
+      method: 'POST',
+      body: formData
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to upload audio: ${response.statusText}`);
+  }
+
+  const result = await response.json();
+  return result.blob_url;
+}
+
+/**
+ * Gets audio SAS URL from Azure Blob Storage via backend API.
+ */
+async function getAudioUrlFromServer(
+  userId: string,
+  messageId: string,
+  provider: 'chatterbox' | 'kokoro'
+): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}&provider=${provider}`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Failed to get audio URL: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.url;
+  } catch (error) {
+    console.error('Failed to get audio URL:', error);
+    return null;
+  }
+}
+
+/**
+ * Deletes audio from Azure Blob Storage via backend API.
+ */
+async function deleteAudioFromServer(
+  userId: string,
+  messageId: string,
+  provider?: 'chatterbox' | 'kokoro'
+): Promise<void> {
+  let url = `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}`;
+  if (provider) {
+    url += `&provider=${provider}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete audio: ${response.statusText}`);
+  }
 }
 
 /**
@@ -176,13 +256,4 @@ export async function clearAllAudio(): Promise<void> {
     console.error('Error clearing audio cache:', error);
     throw error;
   }
-}
-
-/**
- * Legacy function for backward compatibility
- * The IndexedDB implementation is replaced with Azure Blob Storage
- */
-export function openDatabase(): Promise<IDBDatabase> {
-  console.warn('🎵 openDatabase is deprecated - audio is now stored in Azure Blob Storage');
-  return Promise.reject(new Error('IndexedDB audio storage is deprecated'));
 }

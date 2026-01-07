@@ -5,15 +5,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import type { Message, ChatThread } from '../types/chat';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion, generateKokoroAudio } from '../services/apiClientNew';
-import {
-    getChatThreads,
-    createChatThread,
-    updateChatThread as updateChatThreadAPI,
-    deleteChatThread as deleteChatThreadAPI,
-    clearAllChatThreads,
-    uploadAudio,
-    getAudioUrl
-} from '../services/chatStorageAPI';
 import { useToast } from '../hooks/use-toast';
 import { validateFileSize } from '../lib/utils';
 import { useStreamingAudio } from '../hooks/useStreamingAudio';
@@ -112,13 +103,12 @@ const updateOrAddThreadInArray = (threads: ChatThread[], threadToUpsert: ChatThr
 };
 
 export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    // Chat threads are now stored on the server, but we keep local state for UI responsiveness
-    const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+    // Chat threads are stored in localStorage
+    const [chatThreads, setChatThreads] = useLocalStorage<ChatThread[]>('nexus_chat_threads_v2', []);
     const [currentChatThreadId, setCurrentChatThreadId] = useLocalStorage<string | null>('nexus_current_chat_thread_id_v2', null);
     const [activeChatThread, setActiveChatThread] = useState<ChatThread | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoadingResponse, setIsLoadingResponse] = useState(false);
-    const [isLoadingThreads, setIsLoadingThreads] = useState(true); // New loading state
     const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
     const { toast } = useToast();
     const { user } = useAuth();
@@ -203,41 +193,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loadRoleConfig();
     }, [user?.uid]);
 
-    // Load chat threads from server when user is authenticated
-    useEffect(() => {
-        const loadChatThreadsFromServer = async () => {
-            if (!user?.uid) {
-                setIsLoadingThreads(false);
-                return;
-            }
-
-            try {
-                setIsLoadingThreads(true);
-                console.log('📂 Loading chat threads from server...');
-                const threads = await getChatThreads(user.uid);
-                setChatThreads(threads);
-                console.log(`📂 Loaded ${threads.length} chat threads from server`);
-
-                // If there's a current thread ID stored, validate it exists
-                if (currentChatThreadId && !threads.some(t => t.id === currentChatThreadId)) {
-                    setCurrentChatThreadId(null);
-                }
-            } catch (error) {
-                console.error('Failed to load chat threads from server:', error);
-                toast({
-                    title: "Chat History",
-                    description: "Could not load chat history from server. Using local cache.",
-                    variant: "destructive"
-                });
-            } finally {
-                setIsLoadingThreads(false);
-            }
-        };
-
-        loadChatThreadsFromServer();
-    }, [user?.uid]);
-
-    // Chatterbox WebSocket connection is now managed on-demand
+    // Role config loading from Firestore
     // Connection established only when Chatterbox TTS is actively used
     useEffect(() => {
         // Cleanup: disconnect WebSocket when component unmounts
@@ -262,11 +218,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [ttsProvider]);
 
 
-    const updateMessagesInCurrentThread = useCallback(async (newMessages: Message[], title?: string) => {
-        if (!currentChatThreadId || !user?.uid) return;
+    const updateMessagesInCurrentThread = useCallback((newMessages: Message[], title?: string) => {
+        if (!currentChatThreadId) return;
         const messagesForStorage = newMessages.map(({ audioData, ...message }) => message);
 
-        // Update local state immediately for UI responsiveness
+        // Update local state (persisted automatically via useLocalStorage)
         setChatThreads(prevThreads => {
             const threadIndex = prevThreads.findIndex(t => t.id === currentChatThreadId);
             if (threadIndex === -1) return prevThreads;
@@ -282,15 +238,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             newThreads[threadIndex] = updatedThread;
             return newThreads.sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime());
         });
-
-        // Sync to server in background (don't await to keep UI responsive)
-        updateChatThreadAPI(user.uid, currentChatThreadId, {
-            title,
-            messages: messagesForStorage
-        }).catch(error => {
-            console.error('Failed to sync thread to server:', error);
-        });
-    }, [currentChatThreadId, user?.uid]);
+    }, [currentChatThreadId, setChatThreads]);
 
     const setAudioForMessage = useCallback((messageId: string, audioUrl: string) => {
         setMessages(prev => {
@@ -600,7 +548,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     };
 
-    const startNewChat = useCallback(async () => {
+    const startNewChat = useCallback(() => {
         if (activeChatThread && activeChatThread.title === 'New Chat' && activeChatThread.messages.length === 0) {
             if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
                 setIsHistoryPanelOpen(false);
@@ -617,21 +565,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             lastUpdatedAt: new Date().toISOString(),
         };
 
-        // Update local state immediately
+        // Update local state (persisted automatically via useLocalStorage)
         setChatThreads(prevThreads => updateOrAddThreadInArray(prevThreads, newThread));
         setCurrentChatThreadId(newThreadId);
 
         if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
             setIsHistoryPanelOpen(false);
         }
-
-        // Create on server in background
-        if (user?.uid) {
-            createChatThread(user.uid, newThread).catch(error => {
-                console.error('Failed to create thread on server:', error);
-            });
-        }
-    }, [activeChatThread, isHistoryPanelOpen, user?.uid, setIsHistoryPanelOpen]);
+    }, [activeChatThread, isHistoryPanelOpen, setChatThreads, setCurrentChatThreadId, setIsHistoryPanelOpen]);
 
     const restoreAudioFromCache = useCallback(async (messageId: string) => {
         try {
@@ -679,7 +620,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, restoreAudioFromCache]);
 
-    const deleteChatThread = useCallback(async (threadId: string) => {
+    const deleteChatThread = useCallback((threadId: string) => {
         const remainingThreads = chatThreads.filter(t => t.id !== threadId);
         setChatThreads(remainingThreads);
 
@@ -691,29 +632,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 startNewChat();
             }
         }
+    }, [chatThreads, currentChatThreadId, startNewChat, setChatThreads, setCurrentChatThreadId]);
 
-        // Delete from server in background
-        if (user?.uid) {
-            deleteChatThreadAPI(user.uid, threadId).catch(error => {
-                console.error('Failed to delete thread from server:', error);
-            });
-        }
-    }, [chatThreads, currentChatThreadId, startNewChat, user?.uid]);
-
-    const clearChatHistory = useCallback(async () => {
+    const clearChatHistory = useCallback(() => {
         setChatThreads([]);
         startNewChat();
         if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
             setIsHistoryPanelOpen(false);
         }
-
-        // Clear all threads from server in background
-        if (user?.uid) {
-            clearAllChatThreads(user.uid).catch(error => {
-                console.error('Failed to clear threads from server:', error);
-            });
-        }
-    }, [isHistoryPanelOpen, startNewChat, user?.uid, setIsHistoryPanelOpen]);
+    }, [isHistoryPanelOpen, startNewChat, setChatThreads, setIsHistoryPanelOpen]);
 
     const getThreadTitle = (threadId: string): string => {
         const thread = chatThreads.find(t => t.id === threadId);
