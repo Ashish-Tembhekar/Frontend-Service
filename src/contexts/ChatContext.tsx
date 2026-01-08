@@ -84,7 +84,7 @@ interface ChatContextType {
     requestTTS: (text: string, messageId: string, language?: string, skipPersistence?: boolean) => void;
     setAudioForMessage: (messageId: string, audioUrl: string) => void;
     setAudioGeneratingForMessage: (messageId: string, isGenerating: boolean) => void;
-    restoreAudioFromCache: (messageId: string) => Promise<void>;
+    restoreAudioFromCache: (messageId: string, threadId: string) => Promise<void>;
     connectChatterboxTTS: () => void;
     disconnectChatterboxTTS: () => void;
 }
@@ -145,7 +145,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
     }, []);
 
-    const streamingAudio = useStreamingAudio(handleAudioComplete, user?.uid);
+    const streamingAudio = useStreamingAudio(handleAudioComplete, user?.uid, currentChatThreadId || undefined);
     const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
 
     // Use shared WebSocket for status updates (including LLM processing status)
@@ -566,18 +566,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [activeChatThread, isHistoryPanelOpen, setChatThreads, setCurrentChatThreadId, setIsHistoryPanelOpen]);
 
-    const restoreAudioFromCache = useCallback(async (messageId: string) => {
+    const restoreAudioFromCache = useCallback(async (messageId: string, threadId: string) => {
         try {
-            // Try to get audio for the current TTS provider first
-            let blob = await getAudio(messageId, ttsProvider, user?.uid);
-            let usedProvider = ttsProvider;
-
-            // If not found, try the other provider (fallback)
-            if (!blob) {
-                const otherProvider = ttsProvider === 'chatterbox' ? 'kokoro' : 'chatterbox';
-                blob = await getAudio(messageId, otherProvider, user?.uid);
-                usedProvider = otherProvider;
-            }
+            // Get audio from backend using the provided threadId
+            const blob = await getAudio(messageId, user?.uid, threadId);
 
             if (blob) {
                 const audioUrl = URL.createObjectURL(blob);
@@ -586,15 +578,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         ? { ...m, audioUrl, isAudioGenerating: false }
                         : m
                 ));
-                console.log(`🎵 Restored audio from cache for message: ${messageId} (provider: ${usedProvider})`);
+                console.log(`🎵 Restored audio from backend for message: ${messageId}`);
             } else {
-                console.warn(`🎵 No cached audio found for message: ${messageId} (tried both providers)`);
+                console.warn(`🎵 No audio found on backend for message: ${messageId}`);
             }
         } catch (error) {
             console.error(`Failed to restore audio for message ${messageId}:`, error);
-            // Don't set error state here - let the AudioPlayer handle it when it tries to load
         }
-    }, [ttsProvider, user?.uid]);
+    }, [user?.uid]);
 
     const loadChatThread = useCallback(async (threadId: string) => {
         const thread = chatThreads.find(t => t.id === threadId);
@@ -606,7 +597,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             for (const message of thread.messages) {
                 if (message.role === 'assistant' && !message.audioUrl) {
-                    restoreAudioFromCache(message.id);
+                    // Pass the threadId directly instead of relying on state
+                    restoreAudioFromCache(message.id, threadId);
                 }
             }
         }

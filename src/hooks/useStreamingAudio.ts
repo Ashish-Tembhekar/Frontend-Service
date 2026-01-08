@@ -42,7 +42,7 @@ interface TTSParameters {
 // Callback type for when audio merging is complete
 export type OnAudioCompleteCallback = (messageId: string, audioUrl: string) => void;
 
-export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, userId?: string) {
+export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, userId?: string, sessionId?: string) {
   const wsRef = useRef<WebSocket | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackQueueRef = useRef<ChatterboxAudioChunk[]>([]);
@@ -74,11 +74,13 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, use
     onAudioCompleteRef.current = onAudioComplete;
   }, [onAudioComplete]);
 
-  // Track userId in a ref for use in callbacks
+  // Track userId and sessionId in refs for use in callbacks
   const userIdRef = useRef<string | undefined>(userId);
+  const sessionIdRef = useRef<string | undefined>(sessionId);
   useEffect(() => {
     userIdRef.current = userId;
-  }, [userId]);
+    sessionIdRef.current = sessionId;
+  }, [userId, sessionId]);
 
   const [state, setState] = useState<StreamingAudioState>({
     isConnected: false,
@@ -328,10 +330,9 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, use
 
             // + Check skipPersistence flag
             if (messageId && !skipPersistenceRef.current) {
-              // Save to Azure Blob Storage (or local cache if no userId)
-              // Pass the current provider and userId to ensure correct storage
-              saveAudio(messageId, mergedBlob, currentProviderRef.current, userIdRef.current).then(() => {
-                console.log(`🎵 Audio saved for message: ${messageId} (provider: ${currentProviderRef.current})`);
+              // Save to backend file storage (or local cache if no userId/sessionId)
+              saveAudio(messageId, mergedBlob, userIdRef.current, sessionIdRef.current).then(() => {
+                console.log(`🎵 Audio saved for message: ${messageId}`);
               }).catch(err => console.error(err));
             } else {
               console.log(`🎵 Skipping audio persistence for message: ${messageId} (Real-time mode)`);

@@ -1,8 +1,8 @@
 /**
- * Audio Storage Service - Azure Blob Storage Implementation
+ * Audio Storage Service - Simple File-Based Backend Storage
  * 
- * Provides persistent storage for large audio blobs via Azure Blob Storage.
- * Audio is stored per messageId and provider, and can be restored across sessions.
+ * Provides persistent storage for audio files via backend file system.
+ * Audio is stored per user, session, and message.
  */
 
 import { appConfig } from '../lib/config';
@@ -13,26 +13,19 @@ const API_BASE = appConfig.fastApiBaseUrl;
 const audioCache = new Map<string, string>();
 
 /**
- * Generates a cache key for audio storage
- */
-function getCacheKey(messageId: string, provider: 'chatterbox' | 'kokoro'): string {
-  return `${messageId}_${provider}`;
-}
-
-/**
- * Uploads audio to Azure Blob Storage via backend API.
+ * Uploads audio to backend file storage.
  */
 async function uploadAudioToServer(
   userId: string,
+  sessionId: string,
   messageId: string,
-  provider: 'chatterbox' | 'kokoro',
   audioBlob: Blob
 ): Promise<string> {
   const formData = new FormData();
-  formData.append('file', audioBlob, `${messageId}_${provider}.wav`);
+  formData.append('file', audioBlob, `${messageId}.wav`);
 
   const response = await fetch(
-    `${API_BASE}/api/v1/audio/upload?user_id=${encodeURIComponent(userId)}&message_id=${encodeURIComponent(messageId)}&provider=${provider}`,
+    `${API_BASE}/api/v1/audio/upload?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}&message_id=${encodeURIComponent(messageId)}`,
     {
       method: 'POST',
       body: formData
@@ -44,97 +37,95 @@ async function uploadAudioToServer(
   }
 
   const result = await response.json();
-  return result.blob_url;
+  return result.file_path;
 }
 
 /**
- * Gets audio SAS URL from Azure Blob Storage via backend API.
+ * Gets audio file from backend file storage.
  */
-async function getAudioUrlFromServer(
+async function getAudioFromServer(
   userId: string,
-  messageId: string,
-  provider: 'chatterbox' | 'kokoro'
-): Promise<string | null> {
+  sessionId: string,
+  messageId: string
+): Promise<Blob | null> {
   try {
-    const response = await fetch(
-      `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}&provider=${provider}`,
-      {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
+    const url = `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`;
+    console.log(`🎵 Fetching audio from backend: ${url}`);
+
+    const response = await fetch(url, {
+      method: 'GET'
+    });
 
     if (response.status === 404) {
+      console.log(`🎵 Audio not found on backend (404): ${messageId}`);
       return null;
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to get audio URL: ${response.statusText}`);
+      console.error(`🎵 Failed to get audio from backend: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to get audio: ${response.statusText}`);
     }
 
-    const result = await response.json();
-    return result.url;
+    console.log(`🎵 Successfully fetched audio from backend: ${messageId}`);
+    return await response.blob();
   } catch (error) {
-    console.error('Failed to get audio URL:', error);
+    console.error('Failed to get audio from server:', error);
     return null;
   }
 }
 
 /**
- * Deletes audio from Azure Blob Storage via backend API.
+ * Deletes audio from backend file storage.
  */
 async function deleteAudioFromServer(
   userId: string,
-  messageId: string,
-  provider?: 'chatterbox' | 'kokoro'
+  sessionId: string,
+  messageId: string
 ): Promise<void> {
-  let url = `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}`;
-  if (provider) {
-    url += `&provider=${provider}`;
-  }
+  const url = `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`;
 
   const response = await fetch(url, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' }
+    method: 'DELETE'
   });
 
-  if (!response.ok) {
+  if (!response.ok && response.status !== 404) {
     throw new Error(`Failed to delete audio: ${response.statusText}`);
   }
 }
 
 /**
- * Saves an audio blob to Azure Blob Storage (via backend API)
+ * Saves an audio blob to backend file storage
  * Falls back to in-memory cache for immediate playback
  * 
  * @param messageId - The message ID the audio is associated with
  * @param blob - The audio blob to store
- * @param provider - The TTS provider ('chatterbox' or 'kokoro')
- * @param userId - Optional Firebase UID for server-side storage
+ * @param userId - User's unique identifier (required)
+ * @param sessionId - Chat session/thread identifier (required)
  */
 export async function saveAudio(
   messageId: string,
   blob: Blob,
-  provider: 'chatterbox' | 'kokoro',
-  userId?: string
+  userId?: string,
+  sessionId?: string
 ): Promise<void> {
   try {
     // Create a local blob URL for immediate use
     const localUrl = URL.createObjectURL(blob);
-    const cacheKey = getCacheKey(messageId, provider);
-    audioCache.set(cacheKey, localUrl);
+    audioCache.set(messageId, localUrl);
 
-    console.log(`🎵 Audio cached locally for message: ${messageId} (provider: ${provider})`);
+    console.log(`🎵 Audio cached locally for message: ${messageId}`);
 
-    // If we have a userId, also upload to server for persistence
-    if (userId) {
+    // If we have userId and sessionId, upload to server for persistence
+    if (userId && sessionId) {
       try {
-        await uploadAudioToServer(userId, messageId, provider, blob);
-        console.log(`🎵 Audio saved to Azure Blob Storage for message: ${messageId} (provider: ${provider})`);
+        await uploadAudioToServer(userId, sessionId, messageId, blob);
+        console.log(`🎵 Audio saved to backend storage for message: ${messageId}`);
       } catch (uploadError) {
         console.warn(`🎵 Failed to upload audio to server (will use local cache): ${uploadError}`);
         // Continue without throwing - local cache still works
       }
+    } else {
+      console.warn(`🎵 Missing userId or sessionId, audio will only be cached locally`);
     }
   } catch (error) {
     console.error('Error saving audio:', error);
@@ -143,59 +134,52 @@ export async function saveAudio(
 }
 
 /**
- * Retrieves an audio blob from Azure Blob Storage or local cache
+ * Retrieves an audio blob from backend storage or local cache
  * Returns null if not found
  * 
  * @param messageId - The message ID
- * @param provider - The TTS provider ('chatterbox' or 'kokoro')
- * @param userId - Optional Firebase UID for server-side storage
+ * @param userId - User's unique identifier (required for server retrieval)
+ * @param sessionId - Chat session/thread identifier (required for server retrieval)
  */
 export async function getAudio(
   messageId: string,
-  provider: 'chatterbox' | 'kokoro',
-  userId?: string
+  userId?: string,
+  sessionId?: string
 ): Promise<Blob | null> {
   try {
-    const cacheKey = getCacheKey(messageId, provider);
-
     // Check local cache first
-    const cachedUrl = audioCache.get(cacheKey);
+    const cachedUrl = audioCache.get(messageId);
     if (cachedUrl) {
       try {
         const response = await fetch(cachedUrl);
         if (response.ok) {
-          console.log(`🎵 Retrieved audio from local cache for message: ${messageId} (provider: ${provider})`);
+          console.log(`🎵 Retrieved audio from local cache for message: ${messageId}`);
           return response.blob();
         }
       } catch {
         // Cache entry invalid, remove it
-        audioCache.delete(cacheKey);
+        audioCache.delete(messageId);
       }
     }
 
-    // Try to fetch from server if userId is available
-    if (userId) {
+    // Try to fetch from server if userId and sessionId are available
+    if (userId && sessionId) {
       try {
-        const sasUrl = await getAudioUrlFromServer(userId, messageId, provider);
-        if (sasUrl) {
-          const response = await fetch(sasUrl);
-          if (response.ok) {
-            const blob = await response.blob();
+        const blob = await getAudioFromServer(userId, sessionId, messageId);
+        if (blob) {
+          // Cache the result locally for subsequent accesses
+          const localUrl = URL.createObjectURL(blob);
+          audioCache.set(messageId, localUrl);
 
-            // Cache the result locally for subsequent accesses
-            const localUrl = URL.createObjectURL(blob);
-            audioCache.set(cacheKey, localUrl);
-
-            console.log(`🎵 Retrieved audio from Azure Blob Storage for message: ${messageId} (provider: ${provider})`);
-            return blob;
-          }
+          console.log(`🎵 Retrieved audio from backend storage for message: ${messageId}`);
+          return blob;
         }
       } catch (fetchError) {
         console.warn(`🎵 Failed to fetch audio from server: ${fetchError}`);
       }
     }
 
-    console.log(`🎵 No audio found for message: ${messageId} (provider: ${provider})`);
+    console.log(`🎵 No audio found for message: ${messageId}`);
     return null;
   } catch (error) {
     console.error('Error getting audio:', error);
@@ -204,32 +188,30 @@ export async function getAudio(
 }
 
 /**
- * Deletes an audio blob from Azure Blob Storage
+ * Deletes an audio blob from backend storage
  * 
  * @param messageId - The message ID
- * @param provider - The TTS provider ('chatterbox' or 'kokoro')
- * @param userId - Optional Firebase UID for server-side storage
+ * @param userId - User's unique identifier (required for server deletion)
+ * @param sessionId - Chat session/thread identifier (required for server deletion)
  */
 export async function deleteAudio(
   messageId: string,
-  provider: 'chatterbox' | 'kokoro',
-  userId?: string
+  userId?: string,
+  sessionId?: string
 ): Promise<void> {
   try {
-    const cacheKey = getCacheKey(messageId, provider);
-
     // Remove from local cache
-    const cachedUrl = audioCache.get(cacheKey);
+    const cachedUrl = audioCache.get(messageId);
     if (cachedUrl) {
       URL.revokeObjectURL(cachedUrl);
-      audioCache.delete(cacheKey);
+      audioCache.delete(messageId);
     }
 
-    // Delete from server if userId is available
-    if (userId) {
+    // Delete from server if userId and sessionId are available
+    if (userId && sessionId) {
       try {
-        await deleteAudioFromServer(userId, messageId, provider);
-        console.log(`🎵 Audio deleted from Azure Blob Storage for message: ${messageId} (provider: ${provider})`);
+        await deleteAudioFromServer(userId, sessionId, messageId);
+        console.log(`🎵 Audio deleted from backend storage for message: ${messageId}`);
       } catch (deleteError) {
         console.warn(`🎵 Failed to delete audio from server: ${deleteError}`);
       }
