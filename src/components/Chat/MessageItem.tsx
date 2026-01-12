@@ -7,6 +7,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 import { AudioPlayer } from './AudioPlayer';
 import { useChat } from '../../contexts/ChatContext';
+import { SourceCitations } from './SourceCitations';
 
 interface MessageItemProps {
   message: Message;
@@ -178,7 +179,7 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
         </div>
 
         {/* Images Section - Displayed between text and audio player */}
-        {!isUser && message.imageUrls && message.imageUrls.length > 0 && (
+        {!isUser && appConfig.enableImageRetrieval && message.imageUrls && message.imageUrls.length > 0 && (
           <div className="w-full mt-3 space-y-2">
             {message.imageUrls.map((imageUrl, idx) => {
               // Construct full URL if relative
@@ -201,6 +202,11 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
               );
             })}
           </div>
+        )}
+
+        {/* Sources/Citations - Displayed after images and before audio */}
+        {!isUser && message.sources && message.sources.length > 0 && (
+          <SourceCitations sources={message.sources} />
         )}
 
         {/* Audio Player - Shows for assistant messages with audio or currently generating */}

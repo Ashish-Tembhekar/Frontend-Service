@@ -496,6 +496,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 audioData: null,
                 isAudioGenerating: isAudioResponseEnabled,
                 imageUrls: response.image_urls || [], // Add image URLs from response
+                sources: response.sources || [], // Add sources from response
                 ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
                 ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
             };
@@ -595,9 +596,13 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 setIsHistoryPanelOpen(false);
             }
 
+            console.log(`🎵 Loading thread: ${threadId}, messages count: ${thread.messages.length}`);
+
             for (const message of thread.messages) {
-                if (message.role === 'assistant' && !message.audioUrl) {
-                    // Pass the threadId directly instead of relying on state
+                // Always try to restore audio for assistant messages
+                // Blob URLs don't persist across page refreshes
+                if (message.role === 'assistant') {
+                    console.log(`🎵 Restoring audio for message: ${message.id} in thread: ${threadId}`);
                     restoreAudioFromCache(message.id, threadId);
                 }
             }

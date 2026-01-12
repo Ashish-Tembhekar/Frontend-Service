@@ -23,4 +23,8 @@ export const appConfig = {
 
   // Feature flag: Is Kokoro TTS available?
   isKokoroAvailable: Boolean(process.env.NEXT_PUBLIC_KOKORO_TTS_URL),
+
+  // Feature flag: Enable/Disable Image Retrieval & Display
+  // Temporarily disabled by default as requested
+  enableImageRetrieval: (process.env.NEXT_PUBLIC_ENABLE_IMAGE_RETRIEVAL || "false").toLowerCase() === "true",
 };

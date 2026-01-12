@@ -17,8 +17,8 @@ export interface Message {
   audioUrl?: string; // The URL created from the merged TTS Blob for persistent playback
   isAudioGenerating?: boolean; // To show loading/streaming state in the AudioPlayer UI
   imageUrls?: string[]; // URLs of images to display with the message
+  sources?: Source[]; // Sources used to generate the answer
 }
-
 export interface ChatThread {
   id: string;
   title: string;
@@ -74,6 +74,7 @@ export interface Source {
   content_preview: string;
   image_id?: string;
   table_id?: string;
+  source?: string; // Filename
 }
 
 /**
