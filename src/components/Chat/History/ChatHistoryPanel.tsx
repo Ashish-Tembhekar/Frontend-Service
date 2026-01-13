@@ -33,13 +33,13 @@ import { useIsMobile } from '../../../hooks/use-mobile';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../ui/tooltip';
 
 interface ChatHistoryPanelProps {
-  isPopupMode?: boolean; 
+  isPopupMode?: boolean;
 }
 
 export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps) {
   const { chatThreads, currentChatThreadId, startNewChat, clearChatHistory, isHistoryPanelOpen, toggleHistoryPanel, deleteChatThread, loadChatThread } = useChat();
   const isMobile = useIsMobile();
-  const [deleteThreadId, setDeleteThreadId] = useState<string | null>(null); 
+  const [deleteThreadId, setDeleteThreadId] = useState<string | null>(null);
 
   const sortedThreads = [...chatThreads].sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime());
 
@@ -49,8 +49,8 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
       <div className="px-4 py-4 border-b border-gray-300 bg-white/60 backdrop-blur-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Chat History</h2>
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             size="icon"
             onClick={startNewChat}
             className="h-8 w-8 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
@@ -60,7 +60,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
           </Button>
         </div>
       </div>
-        
+
       {/* Chat history list */}
       <div className="flex-1 overflow-y-auto">
         {sortedThreads.length === 0 ? (
@@ -78,11 +78,10 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
               {sortedThreads.map(thread => (
                 <div
                   key={thread.id}
-                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 ${
-                    thread.id === currentChatThreadId
+                  className={`group flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all duration-200 ${thread.id === currentChatThreadId
                       ? 'bg-white shadow-sm border border-gray-200'
                       : 'hover:bg-white/60 hover:shadow-sm'
-                  }`}
+                    }`}
                   onClick={() => loadChatThread(thread.id)}
                 >
                   <div className="flex-1 min-w-0">
@@ -90,17 +89,17 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
                       {thread.title || 'New Chat'}
                     </div>
                     <div className="text-xs text-gray-500 mt-0.5">
-                      {new Date(thread.lastUpdatedAt).toLocaleDateString('en-US', { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
+                      {new Date(thread.lastUpdatedAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
                       })}
                     </div>
                   </div>
-                  
+
                   {/* Three dots menu */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <div className={`${isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity duration-200`}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
@@ -125,7 +124,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
                           Archive
                         </DropdownMenuItem>
                         <DropdownMenuSeparator className="my-1" />
-                        <DropdownMenuItem 
+                        <DropdownMenuItem
                           className="text-red-600 focus:text-red-600 text-sm px-2 py-1.5"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -150,8 +149,8 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
         <div className="px-4 py-4 border-t border-gray-300 bg-white/40 backdrop-blur-sm">
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 className="w-full justify-center gap-2 h-8 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all duration-200"
               >
                 <Trash className="h-4 w-4" />
@@ -191,16 +190,16 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
         ${isHistoryPanelOpen ? 'w-64' : 'w-0 opacity-0 border-none invisible'}
         overflow-hidden shrink-0 
       `}>
-        {isHistoryPanelOpen && panelContent} 
+        {isHistoryPanelOpen && panelContent}
       </aside>
 
       {/* Mobile Drawer */}
       {!isPopupMode && (
         <Sheet open={isHistoryPanelOpen && isMobile} onOpenChange={(open) => {
           if (!open && isHistoryPanelOpen) {
-             toggleHistoryPanel(); 
+            toggleHistoryPanel();
           } else if (open && !isHistoryPanelOpen) {
-             toggleHistoryPanel(); 
+            toggleHistoryPanel();
           }
         }}>
           <SheetContent side="left" className="p-0 w-64 md:hidden bg-gray-100 border-r border-gray-300 flex flex-col">
@@ -222,7 +221,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={() => setDeleteThreadId(null)}
               className="bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300"
             >

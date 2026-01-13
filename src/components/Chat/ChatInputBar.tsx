@@ -18,6 +18,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { logUsageToFirestore } from '../../services/usageLogger';
 
 import { VoiceChatSelectionDialog } from './VoiceChatSelectionDialog';
+import { useIsMobile } from '../../hooks/use-mobile';
 
 export function ChatInputBar() {
   const [inputValue, setInputValue] = useState('');
@@ -34,6 +35,7 @@ export function ChatInputBar() {
     setTtsProvider // + Destructure this
   } = useChat();
   const { user } = useAuth(); // Get authenticated user for usage tracking
+  const isMobile = useIsMobile();
 
   const languageOptions = [
     { value: 'auto', label: 'Auto-detect' },
@@ -298,7 +300,7 @@ export function ChatInputBar() {
       )}
 
       <div className="max-w-4xl mx-auto">
-        <div className="relative flex items-end gap-3 p-3 bg-gray-100 rounded-2xl border border-gray-300 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300 hover:shadow-sm focus-within:shadow-md transition-all duration-300">
+        <div className="relative flex items-end gap-2 md:gap-3 p-2 md:p-3 bg-gray-100 rounded-2xl border border-gray-300 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300 hover:shadow-sm focus-within:shadow-md transition-all duration-300">
           <div className="flex-1 min-h-[44px] flex items-center">
             <Textarea
               value={inputValue}
@@ -311,7 +313,7 @@ export function ChatInputBar() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 md:gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -324,9 +326,9 @@ export function ChatInputBar() {
             </Button>
 
             <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
-              <SelectTrigger className="w-[120px] h-9 text-sm border-gray-200">
-                <Globe className="h-3 w-3 mr-1" />
-                <SelectValue placeholder="Language" />
+              <SelectTrigger className={`h-9 text-sm border-gray-200 ${isMobile ? 'w-[50px] px-2' : 'w-[120px]'}`}>
+                <Globe className="h-3 w-3 md:mr-1" />
+                {!isMobile && <SelectValue placeholder="Language" />}
               </SelectTrigger>
               <SelectContent>
                 {languageOptions.map((option) => (

@@ -594,7 +594,7 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             </div>
           </div>
         </div>
-        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center justify-center gap-6">
+        <div className="absolute bottom-24 md:bottom-16 left-1/2 -translate-x-1/2 flex items-center justify-center gap-6">
           <Button
             onClick={toggleRecording}
             disabled={isTranscribing || isLoadingResponse}

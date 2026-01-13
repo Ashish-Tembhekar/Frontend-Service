@@ -106,7 +106,7 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
         </div>
       )}
 
-      <div className={`flex flex-col max-w-[80%] ${isUser ? 'items-end' : 'items-start'} w-full`}>
+      <div className={`flex flex-col max-w-[90%] md:max-w-[80%] ${isUser ? 'items-end' : 'items-start'} w-full`}>
         <div
           className={`px-4 py-3 rounded-2xl shadow-sm hover:shadow-md transition-shadow duration-200 w-full ${isUser
             ? 'bg-gray-700 text-white'
