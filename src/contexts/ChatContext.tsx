@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from 'react';
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { Message, ChatThread } from '../types/chat';
 import useLocalStorage from '../hooks/useLocalStorage';
 import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion, generateKokoroAudio } from '../services/apiClientNew';
@@ -133,8 +133,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [kokoroVoice, setKokoroVoice] = useLocalStorage('nexus_kokoro_voice_v1', 'af_heart');
     const [kokoroSpeed, setKokoroSpeed] = useLocalStorage('nexus_kokoro_speed_v1', 1.0);
 
+    // Track message IDs that have freshly generated audio in the current session
+    // These should NOT trigger a backend fetch since they already have local Blob URLs
+    const freshlyGeneratedAudioRefs = useRef<Set<string>>(new Set());
+
     const handleAudioComplete = useCallback((messageId: string, audioUrl: string) => {
         console.log(`🎵 Audio complete for message ${messageId}, URL: ${audioUrl.substring(0, 50)}...`);
+        // Track this message as having freshly generated audio
+        freshlyGeneratedAudioRefs.current.add(messageId);
         setMessages(prev => {
             const updatedMessages = prev.map(m =>
                 m.id === messageId
@@ -599,10 +605,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.log(`🎵 Loading thread: ${threadId}, messages count: ${thread.messages.length}`);
 
             for (const message of thread.messages) {
-                // Always try to restore audio for assistant messages
-                // Blob URLs don't persist across page refreshes
+                // Only restore audio for assistant messages that don't have freshly generated audio
+                // Freshly generated audio already has a local Blob URL - no need to fetch from backend
                 if (message.role === 'assistant') {
-                    console.log(`🎵 Restoring audio for message: ${message.id} in thread: ${threadId}`);
+                    if (freshlyGeneratedAudioRefs.current.has(message.id)) {
+                        console.log(`🎵 Skipping backend fetch for freshly generated audio: ${message.id}`);
+                        continue;
+                    }
+                    console.log(`🎵 Restoring audio from backend for message: ${message.id} in thread: ${threadId}`);
                     restoreAudioFromCache(message.id, threadId);
                 }
             }
