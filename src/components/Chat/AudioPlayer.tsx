@@ -128,12 +128,17 @@ export function AudioPlayer({
         setCurrentTime(seekTo);
         hasAppliedInitialSeek.current = true;
 
-        // Auto-play to maintain continuity (user was already listening)
-        audioRef.current.play().then(() => {
-          setIsPlaying(true);
-        }).catch(err => {
-          console.log('🎵 Auto-play blocked, user can click play:', err);
-        });
+        // Only auto-play if streaming was NOT paused (respect user's pause state)
+        if (!isStreamingPaused) {
+          // Auto-play to maintain continuity (user was already listening)
+          audioRef.current.play().then(() => {
+            setIsPlaying(true);
+          }).catch(err => {
+            console.log('🎵 Auto-play blocked, user can click play:', err);
+          });
+        } else {
+          console.log('🎵 Skipping auto-play: streaming was paused by user');
+        }
         hasAutoPlayed.current = true;
       } else if (prevIsGenerating.current && !hasAutoPlayed.current) {
         // Only auto-play if we just transitioned from generating state
@@ -151,7 +156,7 @@ export function AudioPlayer({
         console.log('🎵 Audio ready but not auto-playing (existing audio)');
       }
     }
-  }, [onStopChunkPlayback]);
+  }, [onStopChunkPlayback, isStreamingPaused]);
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current) {
