@@ -113,6 +113,25 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { toast } = useToast();
     const { user } = useAuth();
 
+    // Cleanup stale blob URLs from localStorage on mount.
+    // Blob URLs are tied to the browser session and become invalid after a refresh.
+    useEffect(() => {
+        setChatThreads(prevThreads =>
+            prevThreads.map(thread => ({
+                ...thread,
+                messages: thread.messages.map(msg => {
+                    // If audioUrl is a blob: URL, it is stale from a previous session.
+                    // Clear it so the UI doesn't try to load it and error out.
+                    // The restoreAudioFromCache function will fetch a fresh one shortly.
+                    if (msg.audioUrl && msg.audioUrl.startsWith('blob:')) {
+                        return { ...msg, audioUrl: undefined };
+                    }
+                    return msg;
+                })
+            }))
+        );
+    }, [setChatThreads]);
+
     // TTS Provider State
     const [ttsProvider, setTtsProvider] = useLocalStorage<'chatterbox' | 'kokoro'>('nexus_tts_provider_v1', 'chatterbox');
 
