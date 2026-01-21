@@ -647,7 +647,7 @@ export function DashboardView() {
           <input
             id="file-upload"
             type="file"
-            accept=".pdf,.docx,.txt,.md"
+            accept=".pdf,.docx,.doc,.txt,.md"
             onChange={handleFileInput}
             className="hidden"
           />

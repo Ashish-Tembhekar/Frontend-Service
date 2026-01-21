@@ -431,7 +431,7 @@ export function ChatInputBar() {
         ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
-        accept=".pdf,.docx,.txt,.md"
+        accept=".pdf,.docx,.doc,.txt,.md"
       />
 
       <VoiceChatSelectionDialog
