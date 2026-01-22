@@ -247,10 +247,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!currentChatThreadId) return;
         const messagesForStorage = newMessages.map(({ audioData, ...message }) => message);
 
+        console.log('🔍 DEBUG updateMessagesInCurrentThread: title param =', title);
+
         // Update local state (persisted automatically via useLocalStorage)
         setChatThreads(prevThreads => {
             const threadIndex = prevThreads.findIndex(t => t.id === currentChatThreadId);
             if (threadIndex === -1) return prevThreads;
+
+            const currentTitle = prevThreads[threadIndex].title;
+            console.log('🔍 DEBUG: Current thread title =', currentTitle, ', New title param =', title);
 
             const updatedThread = {
                 ...prevThreads[threadIndex],
@@ -258,6 +263,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 lastUpdatedAt: new Date().toISOString(),
                 ...(title && { title }),
             };
+
+            console.log('🔍 DEBUG: Updated thread title =', updatedThread.title);
 
             const newThreads = [...prevThreads];
             newThreads[threadIndex] = updatedThread;
@@ -526,10 +533,18 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
             };
 
+            // DEBUG: Log the full response to see if session_name is present
+            console.log('🔍 DEBUG: Full API response keys:', Object.keys(response));
+            console.log('🔍 DEBUG: response.session_name value:', response.session_name);
+            console.log('🔍 DEBUG: typeof response.session_name:', typeof response.session_name);
+
             setMessages(prev => {
                 const finalMessages = prev.map(m => m.id === assistantPlaceholderMessage.id ? finalAssistantMessage : m);
                 // Use LLM-generated session_name if available, otherwise fall back to newTitle
                 const titleToUse = response.session_name || newTitle;
+                console.log('🔍 DEBUG: newTitle:', newTitle);
+                console.log('🔍 DEBUG: titleToUse:', titleToUse);
+                console.log('🔍 DEBUG: currentChatThreadId:', currentChatThreadId);
                 updateMessagesInCurrentThread(finalMessages, titleToUse);
                 if (response.session_name) {
                     console.log(`📝 Updated session title to: ${response.session_name}`);
