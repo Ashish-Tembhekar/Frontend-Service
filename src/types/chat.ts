@@ -101,6 +101,7 @@ export interface AskQuestionResponse {
   audio: AudioData | null;
   usage?: UsageSummary | null; // OpenAI API usage data (only present when using OpenAI)
   image_urls?: string[]; // URLs of relevant images from the backend
+  session_name?: string; // LLM-generated session title for dynamic naming
   // Fields from parallel transcribe-and-ask endpoint
   original_text?: string;
   translated_text?: string;

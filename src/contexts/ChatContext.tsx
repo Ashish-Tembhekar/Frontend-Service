@@ -532,6 +532,18 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 return finalMessages;
             });
 
+            // Apply LLM-generated session name if provided (takes priority over default title)
+            if (response.session_name && currentChatThreadId) {
+                setChatThreads(prevThreads =>
+                    prevThreads.map(thread =>
+                        thread.id === currentChatThreadId
+                            ? { ...thread, title: response.session_name!, lastUpdatedAt: new Date().toISOString() }
+                            : thread
+                    )
+                );
+                console.log(`📝 Updated session title to: ${response.session_name}`);
+            }
+
             if (isAudioResponseEnabled) {
                 const tempDiv = document.createElement('div');
                 tempDiv.innerHTML = response.answer;
