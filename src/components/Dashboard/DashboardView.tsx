@@ -194,7 +194,16 @@ export function DashboardView() {
   };
 
   const refreshData = async () => {
-    await Promise.all([fetchFiles(), fetchDashboardStats()]);
+    toast({
+      title: "Refreshing...",
+      description: "Updating dashboard data...",
+      duration: 1000,
+    });
+    await Promise.all([fetchFiles(), fetchDashboardStats(), fetchUploadConfig()]);
+    toast({
+      title: "Dashboard Refreshed",
+      description: "File list and statistics have been updated.",
+    });
   };
 
   // Upload file function
