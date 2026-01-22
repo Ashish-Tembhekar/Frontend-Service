@@ -528,21 +528,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             setMessages(prev => {
                 const finalMessages = prev.map(m => m.id === assistantPlaceholderMessage.id ? finalAssistantMessage : m);
-                updateMessagesInCurrentThread(finalMessages, newTitle);
+                // Use LLM-generated session_name if available, otherwise fall back to newTitle
+                const titleToUse = response.session_name || newTitle;
+                updateMessagesInCurrentThread(finalMessages, titleToUse);
+                if (response.session_name) {
+                    console.log(`📝 Updated session title to: ${response.session_name}`);
+                }
                 return finalMessages;
             });
-
-            // Apply LLM-generated session name if provided (takes priority over default title)
-            if (response.session_name && currentChatThreadId) {
-                setChatThreads(prevThreads =>
-                    prevThreads.map(thread =>
-                        thread.id === currentChatThreadId
-                            ? { ...thread, title: response.session_name!, lastUpdatedAt: new Date().toISOString() }
-                            : thread
-                    )
-                );
-                console.log(`📝 Updated session title to: ${response.session_name}`);
-            }
 
             if (isAudioResponseEnabled) {
                 const tempDiv = document.createElement('div');
