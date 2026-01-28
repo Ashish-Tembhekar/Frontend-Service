@@ -17,13 +17,13 @@ export default function LoginPage() {
   useEffect(() => {
     if (!loading && user) {
       if (user.isApproved) {
-        router.push('/dashboard');
+        router.push('/');
       } else {
         router.push('/pending-approval');
       }
     }
   }, [user, loading, router]);
-  
+
   // Show a full screen spinner while loading to prevent flash of unauthenticated content
   if (loading || user) {
     return (

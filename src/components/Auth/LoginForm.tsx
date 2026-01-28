@@ -4,7 +4,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Mail, Lock, LogIn, AlertCircle } from "lucide-react";
+import { Mail, Lock, LogIn, AlertCircle, Eye, EyeOff } from "lucide-react";
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
   const { signInEmail, signInGoogle, loading: authLoading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -46,7 +47,7 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
       setIsLoggingIn(false);
     }
   }
-  
+
   async function handleGoogleLogin() {
     setError(null);
     try {
@@ -74,7 +75,7 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
             <p className="text-sm">{error}</p>
           </div>
         )}
-        
+
         {/* Social Logins */}
         <div className="flex justify-center">
           <Button
@@ -93,7 +94,7 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
             Continue with Google
           </Button>
         </div>
-        
+
         <Separator className="my-0.5" />
 
         {/* Email/Password Form */}
@@ -122,9 +123,9 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
                 <FormItem>
                   <FormLabel className="flex justify-between">
                     <span>Password</span>
-                    <button 
-                      type="button" 
-                      onClick={onForgotPassword} 
+                    <button
+                      type="button"
+                      onClick={onForgotPassword}
                       className="text-xs text-blue-600 hover:underline"
                       disabled={isLoading}
                     >
@@ -134,7 +135,24 @@ export function LoginForm({ onForgotPassword }: { onForgotPassword: () => void }
                   <FormControl>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input type="password" placeholder="••••••" {...field} className="pl-10" disabled={isLoading} />
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Please enter password"
+                        {...field}
+                        className="pl-10 pr-10"
+                        disabled={isLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
                     </div>
                   </FormControl>
                   <FormMessage />

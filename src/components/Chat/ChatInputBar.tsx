@@ -388,24 +388,26 @@ export function ChatInputBar() {
               </Tooltip>
             </TooltipProvider>
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    onClick={() => setIsSelectionDialogOpen(true)}
-                    disabled={isLoadingResponse || isRecording || isTranscribing}
-                    size="icon"
-                    className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
-                    aria-label="Start voice chat"
-                  >
-                    <Phone className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>Start Real-time Voice Chat</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {appConfig.developerMode && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={() => setIsSelectionDialogOpen(true)}
+                      disabled={isLoadingResponse || isRecording || isTranscribing}
+                      size="icon"
+                      className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
+                      aria-label="Start voice chat"
+                    >
+                      <Phone className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Start Real-time Voice Chat</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
 
             <Button
               onClick={handleSubmit}

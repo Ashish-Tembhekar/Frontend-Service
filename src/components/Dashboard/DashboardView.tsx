@@ -539,11 +539,7 @@ export function DashboardView() {
             </Button>
           )}
 
-          {connectionStatus === 'connected' && (
-            <Badge variant="secondary" className="text-xs">
-              Session: {sessionId.slice(-6)}
-            </Badge>
-          )}
+
         </div>
       </div>
 
@@ -611,11 +607,10 @@ export function DashboardView() {
           <Link href="/">
             <Button
               variant="ghost"
-              size="icon"
               aria-label="Back to chat"
-              className="text-muted-foreground hover:text-foreground"
+              className="h-10 text-muted-foreground hover:text-foreground"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft style={{ width: 25, height: 25, strokeWidth: 3 }} />
             </Button>
           </Link>
           <div>
@@ -663,10 +658,10 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* Statistics Cards */}
+      {/* Statistics Cards : Please on the developer mode in the .env file to render the developers ui */}
       {dashboardStats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-4">
+          <Card className="flex-1 min-w-[200px] bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-700">Total Files</CardTitle>
               <FileText className="h-4 w-4 text-gray-500" />
@@ -679,20 +674,22 @@ export function DashboardView() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-gray-700">Total Chunks</CardTitle>
-              <BarChart3 className="h-4 w-4 text-gray-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{dashboardStats.total_chunks}</div>
-              <p className="text-xs text-gray-600">
-                Across all processed files
-              </p>
-            </CardContent>
-          </Card>
+          {appConfig.developerMode && (
+            <Card className="flex-1 min-w-[200px] bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium text-gray-700">Total Chunks</CardTitle>
+                <BarChart3 className="h-4 w-4 text-gray-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-900">{dashboardStats.total_chunks}</div>
+                <p className="text-xs text-gray-600">
+                  Across all processed files
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
-          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <Card className="flex-1 min-w-[200px] bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-700">Total Size</CardTitle>
               <FileText className="h-4 w-4 text-gray-500" />
@@ -705,7 +702,7 @@ export function DashboardView() {
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
+          <Card className="flex-1 min-w-[200px] bg-gray-100 border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium text-gray-700">Failed Files</CardTitle>
               <FileX className="h-4 w-4 text-gray-500" />

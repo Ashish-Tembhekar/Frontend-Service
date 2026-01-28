@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { User, Mail, LogOut, LayoutDashboard, Wifi, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { appConfig } from '@/lib/config';
 
 // Connection Status Component
 function ConnectionStatus() {
@@ -118,10 +119,13 @@ export function UserMenu() {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* Connection Status Section */}
-        <ConnectionStatus />
-
-        <DropdownMenuSeparator />
+        {/* Connection Status Section - Developer Mode Only */}
+        {appConfig.developerMode && (
+          <>
+            <ConnectionStatus />
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem onClick={() => router.push('/dashboard')} className="cursor-pointer">
           <LayoutDashboard className="mr-2 h-4 w-4" />
           <span>Dashboard</span>
