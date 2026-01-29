@@ -176,6 +176,10 @@ export function ChatInputBar() {
             contentType: 'html' as const,
             timestamp: new Date().toISOString(),
             audioData: null, // No longer passing audio data here
+            sources: response.sources || [],
+            imageUrls: response.image_urls || [],
+            ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
+            ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
           };
 
           addProcessedMessages(userMessage, assistantMessage);

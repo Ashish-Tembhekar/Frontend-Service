@@ -404,6 +404,10 @@ export function VoiceChatFullScreen({ isOpen, onClose }: VoiceChatFullScreenProp
             contentType: 'html' as const,
             timestamp: new Date().toISOString(),
             audioData: undefined,
+            sources: response.sources || [],
+            imageUrls: response.image_urls || [],
+            ...(response.debug_graph_context && { debug_graph_context: response.debug_graph_context }),
+            ...(response.debug_filtered_docs && { debug_filtered_docs: response.debug_filtered_docs }),
           };
 
           addProcessedMessages(userMessage, assistantMessage, true);
