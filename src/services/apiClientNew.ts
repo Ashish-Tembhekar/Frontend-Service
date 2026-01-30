@@ -31,7 +31,7 @@ export async function uploadPdfDocument(file: File): Promise<UploadPdfResponse> 
   } catch (error) {
     console.error("Error calling upload-pdf endpoint:", error);
     if (error instanceof Error && error.message.startsWith('PDF upload failed')) {
-        throw error;
+      throw error;
     }
     throw new Error("Failed to connect to the document service. Please check the backend connection or try again.");
   }
@@ -61,7 +61,7 @@ export async function listFiles(): Promise<ListFilesResponse> {
   } catch (error) {
     console.error("Error calling files endpoint:", error);
     if (error instanceof Error && error.message.startsWith('List files request failed')) {
-        throw error;
+      throw error;
     }
     throw new Error("Failed to connect to the document service. Please check the backend connection or try again.");
   }
@@ -91,7 +91,7 @@ export async function deleteFileChunks(uuid: string): Promise<DeleteChunksRespon
   } catch (error) {
     console.error("Error calling delete-chunks endpoint:", error);
     if (error instanceof Error && error.message.startsWith('Delete chunks request failed')) {
-        throw error;
+      throw error;
     }
     throw new Error("Failed to connect to the document service. Please check the backend connection or try again.");
   }
@@ -138,8 +138,8 @@ export async function askQuestionAPI(
 
   } catch (error) {
     console.error("Error calling ask endpoint:", error);
-     if (error instanceof Error && error.message.startsWith('Ask request failed')) {
-        throw error;
+    if (error instanceof Error && error.message.startsWith('Ask request failed')) {
+      throw error;
     }
     throw new Error("Failed to connect to the AI service. Please check the backend connection or try again.");
   }
@@ -182,139 +182,139 @@ export async function generateSystemPromptAPI(role: string): Promise<{ role: str
  * Transcribes an audio file.
  */
 export async function transcribeAudioAPI(audioBlob: Blob): Promise<TranscribeResponse> {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.webm');
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'recording.webm');
 
-    try {
-        const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe/`, {
-            method: 'POST',
-            body: formData,
-        });
+  try {
+    const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe/`, {
+      method: 'POST',
+      body: formData,
+    });
 
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error("Error from FastAPI backend during transcription:", response.status, errorBody);
-            throw new Error(`Transcription failed with status ${response.status}: ${errorBody}`);
-        }
-
-        const result: TranscribeResponse = await response.json();
-        return result;
-
-    } catch (error) {
-        console.error("Error calling transcribe endpoint:", error);
-        if (error instanceof Error && error.message.startsWith('Transcription failed')) {
-            throw error;
-        }
-        throw new Error("Failed to connect to the transcription service. Please check the backend or try again.");
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Error from FastAPI backend during transcription:", response.status, errorBody);
+      throw new Error(`Transcription failed with status ${response.status}: ${errorBody}`);
     }
+
+    const result: TranscribeResponse = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error("Error calling transcribe endpoint:", error);
+    if (error instanceof Error && error.message.startsWith('Transcription failed')) {
+      throw error;
+    }
+    throw new Error("Failed to connect to the transcription service. Please check the backend or try again.");
+  }
 }
 
 /**
  * Parallel processing: transcribe audio and process query.
  */
 export async function transcribeAndAskAPI(
-    audioBlob: Blob,
-    conversationHistory?: string,
-    selectedLanguage?: string,
-    needsAudio: boolean = true,
-    userId?: string
+  audioBlob: Blob,
+  conversationHistory?: string,
+  selectedLanguage?: string,
+  needsAudio: boolean = true,
+  userId?: string
 ): Promise<AskQuestionResponse> {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.webm');
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'recording.webm');
 
-    if (conversationHistory && conversationHistory.trim() !== '') {
-        formData.append('conversation_history', conversationHistory);
+  if (conversationHistory && conversationHistory.trim() !== '') {
+    formData.append('conversation_history', conversationHistory);
+  }
+  if (selectedLanguage && selectedLanguage !== 'auto') {
+    formData.append('selected_language', selectedLanguage);
+  }
+  formData.append('needs_audio', needsAudio.toString());
+  if (userId) {
+    formData.append('user_id', userId);
+  }
+
+  try {
+    const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Error from FastAPI backend during parallel transcribe-and-ask:", response.status, errorBody);
+      throw new Error(`Parallel transcribe-and-ask failed with status ${response.status}: ${errorBody}`);
     }
-    if (selectedLanguage && selectedLanguage !== 'auto') {
-        formData.append('selected_language', selectedLanguage);
+
+    const result: AskQuestionResponse = await response.json();
+    return result;
+
+  } catch (error) {
+    console.error("Error calling transcribe-and-ask endpoint:", error);
+    if (error instanceof Error && error.message.startsWith('Parallel transcribe-and-ask failed')) {
+      throw error;
     }
-    formData.append('needs_audio', needsAudio.toString());
-    if (userId) {
-        formData.append('user_id', userId);
-    }
-
-    try {
-        const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
-            method: 'POST',
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error("Error from FastAPI backend during parallel transcribe-and-ask:", response.status, errorBody);
-            throw new Error(`Parallel transcribe-and-ask failed with status ${response.status}: ${errorBody}`);
-        }
-
-        const result: AskQuestionResponse = await response.json();
-        return result;
-
-    } catch (error) {
-        console.error("Error calling transcribe-and-ask endpoint:", error);
-        if (error instanceof Error && error.message.startsWith('Parallel transcribe-and-ask failed')) {
-            throw error;
-        }
-        throw new Error("Failed to connect to the voice processing service. Please check the backend or try again.");
-    }
+    throw new Error("Failed to connect to the voice processing service. Please check the backend or try again.");
+  }
 }
 
 /**
  * Transcribe and ask with streaming TTS response.
  */
 export async function transcribeAndAskStreamingAPI(
-    audioBlob: Blob,
-    conversationHistory?: string,
-    selectedLanguage?: string,
-    onStreamingAudio?: (text: string, language: string) => void,
-    userId?: string
+  audioBlob: Blob,
+  conversationHistory?: string,
+  selectedLanguage?: string,
+  onStreamingAudio?: (text: string, language: string) => void,
+  userId?: string
 ): Promise<AskQuestionResponse> {
-    const formData = new FormData();
-    formData.append('file', audioBlob, 'recording.webm');
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'recording.webm');
 
-    if (conversationHistory && conversationHistory.trim() !== '') {
-        formData.append('conversation_history', conversationHistory);
+  if (conversationHistory && conversationHistory.trim() !== '') {
+    formData.append('conversation_history', conversationHistory);
+  }
+  if (selectedLanguage && selectedLanguage !== 'auto') {
+    formData.append('selected_language', selectedLanguage);
+  }
+  formData.append('needs_audio', 'false'); // Always false for streaming logic
+  if (userId) {
+    formData.append('user_id', userId);
+  }
+
+  try {
+    const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Error from FastAPI backend during streaming transcribe-and-ask:", response.status, errorBody);
+      throw new Error(`Streaming transcribe-and-ask failed with status ${response.status}: ${errorBody}`);
     }
-    if (selectedLanguage && selectedLanguage !== 'auto') {
-        formData.append('selected_language', selectedLanguage);
+
+    const result: AskQuestionResponse = await response.json();
+
+    // If text response exists, trigger callback to start streaming (Chatterbox logic)
+    if (result.answer && onStreamingAudio) {
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = result.answer;
+      const textContent = tempDiv.textContent || tempDiv.innerText || '';
+
+      if (textContent.trim()) {
+        onStreamingAudio(textContent, result.detected_language || 'en');
+      }
     }
-    formData.append('needs_audio', 'false'); // Always false for streaming logic
-    if (userId) {
-        formData.append('user_id', userId);
+
+    return result;
+
+  } catch (error) {
+    console.error("Error calling streaming transcribe-and-ask endpoint:", error);
+    if (error instanceof Error && error.message.startsWith('Streaming transcribe-and-ask failed')) {
+      throw error;
     }
-
-    try {
-        const response = await fetch(`${appConfig.fastApiBaseUrl}/transcribe-and-ask/`, {
-            method: 'POST',
-            body: formData,
-        });
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            console.error("Error from FastAPI backend during streaming transcribe-and-ask:", response.status, errorBody);
-            throw new Error(`Streaming transcribe-and-ask failed with status ${response.status}: ${errorBody}`);
-        }
-
-        const result: AskQuestionResponse = await response.json();
-
-        // If text response exists, trigger callback to start streaming (Chatterbox logic)
-        if (result.answer && onStreamingAudio) {
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = result.answer;
-            const textContent = tempDiv.textContent || tempDiv.innerText || '';
-
-            if (textContent.trim()) {
-                onStreamingAudio(textContent, result.detected_language || 'en');
-            }
-        }
-
-        return result;
-
-    } catch (error) {
-        console.error("Error calling streaming transcribe-and-ask endpoint:", error);
-        if (error instanceof Error && error.message.startsWith('Streaming transcribe-and-ask failed')) {
-            throw error;
-        }
-        throw new Error("Failed to connect to the streaming voice processing service. Please check the backend or try again.");
-    }
+    throw new Error("Failed to connect to the streaming voice processing service. Please check the backend or try again.");
+  }
 }
 
 /**
@@ -322,32 +322,32 @@ export async function transcribeAndAskStreamingAPI(
  * Returns a Blob containing the WAV audio.
  */
 export async function generateKokoroAudio(
-    text: string,
-    voice: string,
-    speed: number,
-    language: string
+  text: string,
+  voice: string,
+  speed: number,
+  language: string
 ): Promise<Blob> {
-    const formData = new FormData();
-    formData.append("text", text);
-    formData.append("voice", voice);
-    formData.append("speed", speed.toString());
-    formData.append("language", language);
+  const formData = new FormData();
+  formData.append("text", text);
+  formData.append("voice", voice);
+  formData.append("speed", speed.toString());
+  formData.append("language", language);
 
-    try {
-        console.log(`🔊 Calling Kokoro API at ${KOKORO_API_URL}/generate`);
-        const response = await fetch(`${KOKORO_API_URL}/generate`, {
-            method: "POST",
-            body: formData
-        });
+  try {
+    console.log(`🔊 Calling Kokoro API at ${KOKORO_API_URL}/generate`);
+    const response = await fetch(`${KOKORO_API_URL}/generate`, {
+      method: "POST",
+      body: formData
+    });
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || `Kokoro generation failed with status ${response.status}`);
-        }
-
-        return await response.blob();
-    } catch (e) {
-        console.error("❌ Kokoro API Error:", e);
-        throw e;
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || `Kokoro generation failed with status ${response.status}`);
     }
+
+    return await response.blob();
+  } catch (e) {
+    console.error("❌ Kokoro API Error:", e);
+    throw e;
+  }
 }

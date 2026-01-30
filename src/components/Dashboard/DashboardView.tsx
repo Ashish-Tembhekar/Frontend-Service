@@ -925,8 +925,8 @@ export function DashboardView() {
         </TabsContent>
       </Tabs>
 
-      {/* Role Configuration */}
-      <RoleConfiguration />
+      {/* Role Configuration - Only visible in developer mode */}
+      {appConfig.developerMode && <RoleConfiguration />}
 
       {/* TTS Control Panel */}
       <Card className="bg-white border-gray-200 shadow-sm">
