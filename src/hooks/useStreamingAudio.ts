@@ -39,10 +39,18 @@ interface TTSParameters {
   reference_audio_file?: string | null;
 }
 
-// Callback type for when audio merging is complete
+// Callback type for when audio merging is complete (fires IMMEDIATELY after merge)
 export type OnAudioCompleteCallback = (messageId: string, audioUrl: string) => void;
 
-export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, userId?: string, sessionId?: string) {
+// Callback type for when Azure Blob upload finishes (fires AFTER background upload)
+export type OnBlobNameReadyCallback = (messageId: string, blobName: string) => void;
+
+export function useStreamingAudio(
+  onAudioComplete?: OnAudioCompleteCallback,
+  onBlobNameReady?: OnBlobNameReadyCallback,
+  userId?: string,
+  sessionId?: string,
+) {
   const wsRef = useRef<WebSocket | null>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const playbackQueueRef = useRef<ChatterboxAudioChunk[]>([]);
@@ -61,6 +69,7 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, use
   const currentMessageIdRef = useRef<string | null>(null); // Current message ID for TTS
   const currentProviderRef = useRef<'chatterbox' | 'kokoro'>('chatterbox'); // Track current provider
   const onAudioCompleteRef = useRef<OnAudioCompleteCallback | undefined>(onAudioComplete);
+  const onBlobNameReadyRef = useRef<OnBlobNameReadyCallback | undefined>(onBlobNameReady);
 
   // + NEW: Ref to track if persistence should be skipped for current request
   const skipPersistenceRef = useRef<boolean>(false);
@@ -69,10 +78,13 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, use
   const completedChunksDurationRef = useRef<number>(0); // Total duration of all finished chunks
   const currentChunkStartTimeRef = useRef<number | null>(null); // When current chunk started playing
 
-  // Keep the callback ref updated
+  // Keep the callback refs updated
   useEffect(() => {
     onAudioCompleteRef.current = onAudioComplete;
   }, [onAudioComplete]);
+  useEffect(() => {
+    onBlobNameReadyRef.current = onBlobNameReady;
+  }, [onBlobNameReady]);
 
   // Track userId and sessionId in refs for use in callbacks
   const userIdRef = useRef<string | undefined>(userId);
@@ -326,20 +338,35 @@ export function useStreamingAudio(onAudioComplete?: OnAudioCompleteCallback, use
             const mergedUrl = URL.createObjectURL(mergedBlob);
             const messageId = currentMessageIdRef.current;
 
-            setState(prev => ({ ...prev, mergedAudioUrl: mergedUrl }));
+            // Update state: set merged URL and clear currentMessageId so player transitions
+            setState(prev => ({
+              ...prev,
+              mergedAudioUrl: mergedUrl,
+              currentMessageId: null,  // Clear so isGenerating becomes false in AudioPlayer
+              isStreaming: false,
+            }));
+            currentMessageIdRef.current = null;
 
-            // + Check skipPersistence flag
-            if (messageId && !skipPersistenceRef.current) {
-              // Save to backend file storage (or local cache if no userId/sessionId)
-              saveAudio(messageId, mergedBlob, userIdRef.current, sessionIdRef.current).then(() => {
-                console.log(`🎵 Audio saved for message: ${messageId}`);
-              }).catch(err => console.error(err));
-            } else {
-              console.log(`🎵 Skipping audio persistence for message: ${messageId} (Real-time mode)`);
-            }
-
+            // Fire onAudioComplete IMMEDIATELY so the player swaps from streaming to merged audio
             if (messageId && onAudioCompleteRef.current) {
               onAudioCompleteRef.current(messageId, mergedUrl);
+            }
+
+            // Upload to Azure Blob Storage in the BACKGROUND (don't block UI transition)
+            if (messageId && !skipPersistenceRef.current) {
+              saveAudio(messageId, mergedBlob, userIdRef.current, sessionIdRef.current)
+                .then((blobName) => {
+                  console.log(`☁️  Audio uploaded to Azure for message: ${messageId}, blob: ${blobName}`);
+                  // Fire the blob name callback so ChatContext can persist audioBlobName to Firestore
+                  if (blobName && onBlobNameReadyRef.current) {
+                    onBlobNameReadyRef.current(messageId, blobName);
+                  }
+                })
+                .catch(err => {
+                  console.error('☁️  Azure upload failed:', err);
+                });
+            } else {
+              console.log(`🎵 Skipping audio persistence for message: ${messageId} (Real-time mode)`);
             }
           } catch (error) {
             console.error('🎵 Error merging audio chunks:', error);

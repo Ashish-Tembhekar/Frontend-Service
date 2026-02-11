@@ -99,6 +99,7 @@ export async function deleteFileChunks(uuid: string): Promise<DeleteChunksRespon
 
 /**
  * Asks a question to the backend.
+ * Uses POST with JSON body to avoid URL length limitations.
  */
 export async function askQuestionAPI(
   query: string,
@@ -109,22 +110,20 @@ export async function askQuestionAPI(
   systemPrompt?: string
 ): Promise<AskQuestionResponse> {
   try {
-    const url = new URL(`${appConfig.fastApiBaseUrl}/ask/`);
-    url.searchParams.append('q', query);
-
-    if (detectedLang) url.searchParams.append('detected_lang', detectedLang);
-    if (conversationHistory && conversationHistory.trim() !== '') {
-      url.searchParams.append('conversation_history', conversationHistory);
-    }
-    if (needsAudio) url.searchParams.append('needs_audio', 'true');
-    if (userId) url.searchParams.append('user_id', userId);
-    if (systemPrompt) url.searchParams.append('system_prompt', systemPrompt);
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
+    const response = await fetch(`${appConfig.fastApiBaseUrl}/ask/`, {
+      method: 'POST',
       headers: {
         'Accept': 'application/json',
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        query: query,
+        conversation_history: conversationHistory || '',
+        detected_lang: detectedLang || null,
+        needs_audio: needsAudio,
+        user_id: userId || null,
+        system_prompt: systemPrompt || null,
+      }),
     });
 
     if (!response.ok) {

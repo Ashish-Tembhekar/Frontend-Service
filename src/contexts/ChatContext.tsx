@@ -11,8 +11,23 @@ import { useStreamingAudio } from '../hooks/useStreamingAudio';
 import { useAuth } from './AuthContext';
 import { logUsageToFirestore, logTTSUsageToFirestore, type TTSUsageData } from '../services/usageLogger';
 import { db } from '../lib/firebase/config';
-import { getAudio, saveAudio } from '../services/audioStorage';
-import { useWebSocketContext } from './WebSocketContext';
+import {
+    collection,
+    doc,
+    setDoc,
+    deleteDoc,
+    onSnapshot,
+    query,
+    orderBy,
+    serverTimestamp,
+    addDoc,
+    getDocs,
+    writeBatch,
+    Timestamp,
+    updateDoc
+} from 'firebase/firestore';
+import { getAudioSasUrl } from '../services/audioStorage';
+import { useSSEContext } from './SSEContext';
 import { appConfig } from '../lib/config';
 
 interface ChatContextType {
@@ -102,35 +117,221 @@ const updateOrAddThreadInArray = (threads: ChatThread[], threadToUpsert: ChatThr
     }
 };
 
+// Helper function to convert Firestore Timestamp to ISO string
+const timestampToISO = (timestamp: Timestamp | Date | string | undefined | null): string => {
+    if (!timestamp) return new Date().toISOString();
+    if (typeof timestamp === 'string') return timestamp;
+    // Check if it's a Date object
+    if (timestamp instanceof Date) return timestamp.toISOString();
+    // Check if it has toDate method (Firestore Timestamp)
+    if (typeof (timestamp as Timestamp).toDate === 'function') {
+        return (timestamp as Timestamp).toDate().toISOString();
+    }
+    // Fallback: try to create a date from seconds if it has that property
+    if ('seconds' in timestamp && typeof timestamp.seconds === 'number') {
+        return new Date(timestamp.seconds * 1000).toISOString();
+    }
+    // Final fallback
+    return new Date().toISOString();
+};
+
+// Helper function to sanitize objects for Firestore (replace undefined with null, remove functions)
+const sanitizeForFirestore = <T extends Record<string, unknown>>(obj: T): T => {
+    const sanitized: Record<string, unknown> = {};
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = obj[key];
+            if (typeof value === 'function') {
+                // Skip functions
+                continue;
+            } else if (value === undefined) {
+                // Replace undefined with null
+                sanitized[key] = null;
+            } else if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                // Recursively sanitize nested objects (but not arrays)
+                sanitized[key] = sanitizeForFirestore(value as Record<string, unknown>);
+            } else if (Array.isArray(value)) {
+                // Sanitize arrays - convert undefined elements to null
+                sanitized[key] = value.map((item: unknown) =>
+                    item === undefined ? null :
+                        (typeof item === 'object' && item !== null && !Array.isArray(item)
+                            ? sanitizeForFirestore(item as Record<string, unknown>)
+                            : item)
+                );
+            } else {
+                sanitized[key] = value;
+            }
+        }
+    }
+    return sanitized as T;
+};
+
 export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    // Chat threads are stored in localStorage
-    const [chatThreads, setChatThreads] = useLocalStorage<ChatThread[]>('nexus_chat_threads_v2', []);
-    const [currentChatThreadId, setCurrentChatThreadId] = useLocalStorage<string | null>('nexus_current_chat_thread_id_v2', null);
+    // Chat threads are now stored in Firestore (users/{uid}/threads)
+    const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+    const [currentChatThreadId, setCurrentChatThreadId] = useState<string | null>(null);
+    const [isFirestoreLoading, setIsFirestoreLoading] = useState(true);
     const [activeChatThread, setActiveChatThread] = useState<ChatThread | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoadingResponse, setIsLoadingResponse] = useState(false);
+    // Ref to track in-flight (optimistic) message IDs that haven't been persisted to Firestore yet.
+    // This prevents the onSnapshot listener from wiping them when it fires with stale data.
+    const pendingMessageIdsRef = useRef<Set<string>>(new Set());
+    // Ref to track thread IDs that exist only in local state (not yet persisted to Firestore).
+    // Threads are created locally first and only written to Firestore when the first message is sent.
+    // This prevents empty conversation sessions from accumulating in Firestore on every refresh.
+    const pendingThreadIdsRef = useRef<Set<string>>(new Set());
     const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useLocalStorage('nexus_history_panel_open_v2', false);
     const { toast } = useToast();
     const { user } = useAuth();
 
-    // Cleanup stale blob URLs from localStorage on mount.
-    // Blob URLs are tied to the browser session and become invalid after a refresh.
+    // Real-time Firestore sync for chat threads
     useEffect(() => {
-        setChatThreads(prevThreads =>
-            prevThreads.map(thread => ({
-                ...thread,
-                messages: thread.messages.map(msg => {
-                    // If audioUrl is a blob: URL, it is stale from a previous session.
-                    // Clear it so the UI doesn't try to load it and error out.
-                    // The restoreAudioFromCache function will fetch a fresh one shortly.
-                    if (msg.audioUrl && msg.audioUrl.startsWith('blob:')) {
-                        return { ...msg, audioUrl: undefined };
+        if (!user?.uid) {
+            setChatThreads([]);
+            setCurrentChatThreadId(null);
+            setIsFirestoreLoading(false);
+            return;
+        }
+
+        console.log('🔥 Setting up Firestore listener for threads...');
+        const threadsRef = collection(db, 'users', user.uid, 'threads');
+        const threadsQuery = query(threadsRef, orderBy('lastUpdatedAt', 'desc'));
+
+        const unsubscribe = onSnapshot(
+            threadsQuery,
+            (snapshot) => {
+                const threads: ChatThread[] = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        title: data.title || 'New Chat',
+                        messages: [], // Messages are fetched separately
+                        createdAt: timestampToISO(data.createdAt),
+                        lastUpdatedAt: timestampToISO(data.lastUpdatedAt),
+                    };
+                });
+                console.log(`🔥 Received ${threads.length} threads from Firestore`);
+                // Merge Firestore threads with any pending (local-only) threads.
+                // Pending threads haven't been written to Firestore yet (no messages sent).
+                const firestoreIds = new Set(threads.map(t => t.id));
+                setChatThreads(prev => {
+                    const stillPending = prev.filter(t =>
+                        pendingThreadIdsRef.current.has(t.id) && !firestoreIds.has(t.id)
+                    );
+                    // Also clean up pendingThreadIdsRef: remove IDs now in Firestore
+                    for (const id of pendingThreadIdsRef.current) {
+                        if (firestoreIds.has(id)) {
+                            pendingThreadIdsRef.current.delete(id);
+                        }
                     }
-                    return msg;
-                })
-            }))
+                    return [...stillPending, ...threads];
+                });
+                setIsFirestoreLoading(false);
+
+                // Auto-select the most recent thread if none is selected
+                if (!currentChatThreadId && threads.length > 0) {
+                    setCurrentChatThreadId(threads[0].id);
+                }
+            },
+            (error) => {
+                console.error('Error listening to threads:', error);
+                toast({
+                    title: "Sync Error",
+                    description: "Failed to sync chat history. Please refresh the page.",
+                    variant: "destructive",
+                });
+                setIsFirestoreLoading(false);
+            }
         );
-    }, [setChatThreads]);
+
+        return () => {
+            console.log('🔥 Unsubscribing from Firestore threads listener');
+            unsubscribe();
+        };
+    }, [user?.uid, toast]);
+
+    // Fetch messages when currentChatThreadId changes
+    useEffect(() => {
+        if (!user?.uid || !currentChatThreadId) {
+            setMessages([]);
+            return;
+        }
+
+        console.log(`🔥 Setting up Firestore listener for messages in thread: ${currentChatThreadId}`);
+        const messagesRef = collection(db, 'users', user.uid, 'threads', currentChatThreadId, 'messages');
+        const messagesQuery = query(messagesRef, orderBy('timestamp', 'asc'));
+
+        const unsubscribe = onSnapshot(
+            messagesQuery,
+            (snapshot) => {
+                const firestoreMsgs: Message[] = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        id: doc.id,
+                        role: data.role,
+                        content: data.content,
+                        contentType: data.contentType,
+                        timestamp: timestampToISO(data.timestamp),
+                        // audioUrl is NOT persisted to Firestore (local blob: URLs are useless).
+                        // It will be restored on-demand from Azure via audioBlobName + SAS URL.
+                        audioBlobName: data.audioBlobName,
+                        imageUrls: data.imageUrls,
+                        sources: data.sources,
+                    };
+                });
+                console.log(`🔥 Received ${firestoreMsgs.length} messages from Firestore`);
+
+                // Remove any pending IDs that now exist in Firestore (they've been persisted)
+                const firestoreIds = new Set(firestoreMsgs.map(m => m.id));
+                for (const id of pendingMessageIdsRef.current) {
+                    if (firestoreIds.has(id)) {
+                        pendingMessageIdsRef.current.delete(id);
+                    }
+                }
+
+                // Merge Firestore data with local state, preserving:
+                // 1. Pending (in-flight) messages not yet persisted to Firestore
+                // 2. Local audioUrl for freshly generated audio (not persisted to Firestore)
+                setMessages(prev => {
+                    // Build a map of local audioUrls for freshly generated audio
+                    const localAudioUrls = new Map<string, string>();
+                    for (const msg of prev) {
+                        if (msg.audioUrl && freshlyGeneratedAudioRefs.current.has(msg.id)) {
+                            localAudioUrls.set(msg.id, msg.audioUrl);
+                        }
+                    }
+
+                    // Start with Firestore messages, preserving local audioUrls
+                    const merged: Message[] = firestoreMsgs.map(msg => {
+                        const localUrl = localAudioUrls.get(msg.id);
+                        return localUrl ? { ...msg, audioUrl: localUrl } : msg;
+                    });
+
+                    // Append any pending messages not yet in Firestore
+                    if (pendingMessageIdsRef.current.size > 0) {
+                        console.log(`🔥 Merging Firestore data with ${pendingMessageIdsRef.current.size} pending message(s)`);
+                        const pendingMessages = prev.filter(m => pendingMessageIdsRef.current.has(m.id));
+                        for (const pm of pendingMessages) {
+                            if (!firestoreIds.has(pm.id)) {
+                                merged.push(pm);
+                            }
+                        }
+                    }
+
+                    return merged;
+                });
+            },
+            (error) => {
+                console.error('Error listening to messages:', error);
+            }
+        );
+
+        return () => {
+            console.log('🔥 Unsubscribing from Firestore messages listener');
+            unsubscribe();
+        };
+    }, [user?.uid, currentChatThreadId]);
 
     // TTS Provider State
     const [ttsProvider, setTtsProvider] = useLocalStorage<'chatterbox' | 'kokoro'>('nexus_tts_provider_v1', 'chatterbox');
@@ -160,31 +361,47 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.log(`🎵 Audio complete for message ${messageId}, URL: ${audioUrl.substring(0, 50)}...`);
         // Track this message as having freshly generated audio
         freshlyGeneratedAudioRefs.current.add(messageId);
-        setMessages(prev => {
-            const updatedMessages = prev.map(m =>
-                m.id === messageId
-                    ? { ...m, audioUrl, isAudioGenerating: false }
-                    : m
-            );
-            return updatedMessages;
-        });
+        setMessages(prev => prev.map(m =>
+            m.id === messageId
+                ? { ...m, audioUrl, isAudioGenerating: false }
+                : m
+        ));
     }, []);
 
-    const streamingAudio = useStreamingAudio(handleAudioComplete, user?.uid, currentChatThreadId || undefined);
+    // Called AFTER Azure Blob upload completes (background) — persists audioBlobName to Firestore
+    const handleBlobNameReady = useCallback(async (messageId: string, blobName: string) => {
+        console.log(`☁️  Blob name ready for message ${messageId}: ${blobName}`);
+        // Update local state
+        setMessages(prev => prev.map(m =>
+            m.id === messageId ? { ...m, audioBlobName: blobName } : m
+        ));
+        // Persist audioBlobName directly to Firestore
+        if (user?.uid && currentChatThreadId) {
+            try {
+                const messageDoc = doc(db, 'users', user.uid, 'threads', currentChatThreadId, 'messages', messageId);
+                await setDoc(messageDoc, { audioBlobName: blobName }, { merge: true });
+                console.log(`🔥 Persisted audioBlobName to Firestore for message: ${messageId}`);
+            } catch (error) {
+                console.error(`🔥 Failed to persist audioBlobName for message ${messageId}:`, error);
+            }
+        }
+    }, [user?.uid, currentChatThreadId]);
+
+    const streamingAudio = useStreamingAudio(handleAudioComplete, handleBlobNameReady, user?.uid, currentChatThreadId || undefined);
     const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
 
-    // Use shared WebSocket for status updates (including LLM processing status)
-    const { lastMessage: wsLastMessage } = useWebSocketContext();
+    // Use shared SSE for status updates (including LLM processing status)
+    const { lastEvent: sseLastEvent } = useSSEContext();
 
     // Role config
     const [chatbotRole, setChatbotRole] = useLocalStorage('nexus_chatbot_role_v1', 'Helpful Document Assistant');
     const [systemPrompt, setSystemPrompt] = useLocalStorage('nexus_system_prompt_v1', 'You are a helpful document assistant. Provide clear, accurate, and concise answers based on the provided documents.');
     const [isLoadingRoleConfig, setIsLoadingRoleConfig] = useState(false);
 
-    // Handle WebSocket messages for LLM status updates
+    // Handle SSE events for LLM status updates
     useEffect(() => {
-        if (wsLastMessage && wsLastMessage.type === 'llm_status_update') {
-            const { question_id, status } = wsLastMessage;
+        if (sseLastEvent && sseLastEvent.type === 'llm_status_update') {
+            const { question_id, status } = sseLastEvent;
             if (question_id && status) {
                 // Update the processing status of the loading assistant message
                 setMessages(prev => prev.map(msg =>
@@ -194,7 +411,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ));
             }
         }
-    }, [wsLastMessage]);
+    }, [sseLastEvent]);
 
     useEffect(() => {
         const loadRoleConfig = async () => {
@@ -243,34 +460,77 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [ttsProvider]);
 
 
-    const updateMessagesInCurrentThread = useCallback((newMessages: Message[], title?: string) => {
-        if (!currentChatThreadId) return;
-        const messagesForStorage = newMessages.map(({ audioData, ...message }) => message);
+    // Write messages to Firestore and update thread metadata
+    const updateMessagesInCurrentThread = useCallback(async (newMessages: Message[], title?: string) => {
+        if (!currentChatThreadId || !user?.uid) return;
 
-        console.log('🔍 DEBUG updateMessagesInCurrentThread: title param =', title);
+        console.log('🔥 Persisting messages to Firestore, title:', title);
 
-        // Update local state (persisted automatically via useLocalStorage)
-        setChatThreads(prevThreads => {
-            const threadIndex = prevThreads.findIndex(t => t.id === currentChatThreadId);
-            if (threadIndex === -1) return prevThreads;
+        try {
+            const threadRef = doc(db, 'users', user.uid, 'threads', currentChatThreadId);
+            const messagesRef = collection(db, 'users', user.uid, 'threads', currentChatThreadId, 'messages');
 
-            const currentTitle = prevThreads[threadIndex].title;
-            console.log('🔍 DEBUG: Current thread title =', currentTitle, ', New title param =', title);
+            // If this thread was created locally (pending), persist it to Firestore now
+            if (pendingThreadIdsRef.current.has(currentChatThreadId)) {
+                console.log('🔥 Persisting pending thread to Firestore on first message:', currentChatThreadId);
+                await setDoc(threadRef, {
+                    title: title || 'New Chat',
+                    createdAt: serverTimestamp(),
+                    lastUpdatedAt: serverTimestamp(),
+                });
+                pendingThreadIdsRef.current.delete(currentChatThreadId);
+            }
 
-            const updatedThread = {
-                ...prevThreads[threadIndex],
-                messages: messagesForStorage,
-                lastUpdatedAt: new Date().toISOString(),
-                ...(title && { title }),
+            // Write all finalized (non-loading) messages to Firestore.
+            // We use setDoc with merge:true so re-writing already-persisted messages is safe.
+            // This avoids relying on stale closure state to determine which messages are "new".
+            const messagesToWrite = newMessages.filter(m => !m.isLoading);
+
+            // Write each finalized message to Firestore
+            for (const msg of messagesToWrite) {
+
+                const messageDoc = doc(messagesRef, msg.id);
+                const { audioData, isLoading, processingStatus, isAudioGenerating, ...messageForStorage } = msg as Message & { audioData?: unknown };
+
+                // Sanitize the message object - replace undefined with null for Firestore compatibility
+                // NOTE: audioUrl is deliberately excluded — local blob: URLs are useless after refresh.
+                // Audio is restored from Azure via audioBlobName + SAS URL on-demand.
+                const { audioUrl: _audioUrl, ...messageWithoutAudioUrl } = messageForStorage;
+                const sanitizedMessage = sanitizeForFirestore({
+                    ...messageWithoutAudioUrl,
+                    // Initialize optional fields to null if undefined
+                    contentType: messageForStorage.contentType ?? null,
+                    audioBlobName: messageForStorage.audioBlobName ?? null,
+                    imageUrls: messageForStorage.imageUrls ?? null,
+                    sources: messageForStorage.sources ?? null,
+                    // Use the client-side timestamp from message creation, not serverTimestamp()
+                    // This ensures user message always has an earlier timestamp than assistant message
+                    timestamp: messageForStorage.timestamp,
+                });
+
+                console.log('🔥 Sanitized data for Firestore:', sanitizedMessage);
+                await setDoc(messageDoc, sanitizedMessage, { merge: true });
+            }
+
+            // Update thread metadata (title and lastUpdatedAt)
+            const updateData: Record<string, any> = {
+                lastUpdatedAt: serverTimestamp(),
             };
+            if (title) {
+                updateData.title = title;
+            }
+            await updateDoc(threadRef, updateData);
 
-            console.log('🔍 DEBUG: Updated thread title =', updatedThread.title);
-
-            const newThreads = [...prevThreads];
-            newThreads[threadIndex] = updatedThread;
-            return newThreads.sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime());
-        });
-    }, [currentChatThreadId, setChatThreads]);
+            console.log('🔥 Successfully persisted to Firestore');
+        } catch (error) {
+            console.error('Error persisting to Firestore:', error);
+            toast({
+                title: "Save Error",
+                description: "Failed to save message. Changes may not persist.",
+                variant: "destructive",
+            });
+        }
+    }, [currentChatThreadId, user?.uid, toast]);
 
     const setAudioForMessage = useCallback((messageId: string, audioUrl: string) => {
         setMessages(prev => {
@@ -301,37 +561,16 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, []);
 
-    useEffect(() => {
-        const emptyThreads = chatThreads.filter(t => t.messages.length === 0 && t.title === 'New Chat');
-        const nonEmptyThreads = chatThreads.filter(t => t.messages.length > 0);
+    // Note: Effect for handling initial thread creation is placed after startNewChat definition
 
-        if (emptyThreads.length > 1) {
-            const mostRecentEmpty = [...emptyThreads].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-            const cleanedThreads = [...nonEmptyThreads, mostRecentEmpty];
-            setChatThreads(cleanedThreads);
-        }
-
-        const threadsExist = chatThreads.length > 0;
-        const currentIdIsValid = currentChatThreadId && chatThreads.some(t => t.id === currentChatThreadId);
-
-        if (threadsExist && !currentIdIsValid) {
-            const mostRecentThread = [...chatThreads].sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime())[0];
-            setCurrentChatThreadId(mostRecentThread.id);
-        } else if (!threadsExist && currentChatThreadId) {
-            startNewChat();
-        } else if (!currentChatThreadId && !threadsExist) {
-            startNewChat();
-        }
-    }, [chatThreads, currentChatThreadId]);
-
+    // Update activeChatThread when currentChatThreadId or chatThreads changes
     useEffect(() => {
         if (currentChatThreadId) {
             const thread = chatThreads.find(t => t.id === currentChatThreadId);
             setActiveChatThread(thread || null);
-            setMessages(thread?.messages || []);
+            // Note: messages are now fetched from Firestore via the messages onSnapshot listener
         } else {
             setActiveChatThread(null);
-            setMessages([]);
         }
     }, [currentChatThreadId, chatThreads]);
 
@@ -447,6 +686,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             isAudioGenerating: isAudioResponseEnabled && !skipTTS // Do not show generating state if skipping TTS
         };
 
+        // Mark as pending so onSnapshot doesn't wipe them before Firestore persistence
+        pendingMessageIdsRef.current.add(userMessage.id);
+        pendingMessageIdsRef.current.add(assistantMessageForState.id);
+
         setMessages(prevMessages => {
             const updatedMessages = [...prevMessages, userMessage, assistantMessageForState];
             updateMessagesInCurrentThread(updatedMessages, newTitle);
@@ -490,6 +733,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
         const newTitle = isNewThread ? (displayText.substring(0, 30) + (displayText.length > 30 ? '...' : '')) : undefined;
 
+        // Mark both messages as pending so onSnapshot doesn't wipe them before Firestore persistence
+        pendingMessageIdsRef.current.add(userMessage.id);
+        pendingMessageIdsRef.current.add(assistantPlaceholderMessage.id);
+
         setMessages(prevMessages => {
             const updatedMessages = [...prevMessages, userMessage, assistantPlaceholderMessage];
             updateMessagesInCurrentThread(updatedMessages, newTitle);
@@ -498,8 +745,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         try {
             let conversationHistoryString = '';
-            const currentMessages = activeChatThread?.messages || [];
-            const recentMessages = currentMessages.filter(msg => msg.role !== 'system').slice(-10);
+            // Use messages from state (not activeChatThread.messages which is always [] since Firestore migration)
+            const currentMessages = messages.filter(msg => msg.role !== 'system' && !msg.isLoading);
+            const recentMessages = currentMessages.slice(-10);
 
             for (let i = 0; i < recentMessages.length - 1; i += 2) {
                 const userMsg = recentMessages[i];
@@ -582,56 +830,162 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 return finalMessages;
             });
         } finally {
+            // Clear pending message IDs — by now they've been persisted to Firestore
+            // (or replaced with error messages that were persisted).
+            // The next onSnapshot will pick them up from Firestore.
+            pendingMessageIdsRef.current.delete(userMessage.id);
+            pendingMessageIdsRef.current.delete(assistantPlaceholderMessage.id);
             setIsLoadingResponse(false);
         }
     };
 
-    const startNewChat = useCallback(() => {
-        if (activeChatThread && activeChatThread.title === 'New Chat' && activeChatThread.messages.length === 0) {
+    const startNewChat = useCallback(async () => {
+        if (!user?.uid) return;
+
+        // Check if there's already a pending (local-only) empty "New Chat" thread we can reuse
+        const existingPendingThread = chatThreads.find(t =>
+            pendingThreadIdsRef.current.has(t.id) && t.title === 'New Chat'
+        );
+        if (existingPendingThread) {
+            setCurrentChatThreadId(existingPendingThread.id);
+            setMessages([]);
             if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
                 setIsHistoryPanelOpen(false);
             }
             return;
         }
 
+        // Also check if the current thread is already a "New Chat" with no messages
+        if (currentChatThreadId) {
+            const currentThread = chatThreads.find(t => t.id === currentChatThreadId);
+            if (currentThread?.title === 'New Chat' && messages.length === 0) {
+                if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
+                    setIsHistoryPanelOpen(false);
+                }
+                return;
+            }
+        }
+
+        // Create thread LOCALLY only — it will be persisted to Firestore when the first message is sent.
+        // This prevents empty conversation sessions from accumulating in Firestore on every refresh.
         const newThreadId = `thread_${Date.now()}`;
+        const now = new Date().toISOString();
         const newThread: ChatThread = {
             id: newThreadId,
             title: 'New Chat',
             messages: [],
-            createdAt: new Date().toISOString(),
-            lastUpdatedAt: new Date().toISOString(),
+            createdAt: now,
+            lastUpdatedAt: now,
         };
 
-        // Update local state (persisted automatically via useLocalStorage)
-        setChatThreads(prevThreads => updateOrAddThreadInArray(prevThreads, newThread));
+        pendingThreadIdsRef.current.add(newThreadId);
+        setChatThreads(prev => [newThread, ...prev]);
         setCurrentChatThreadId(newThreadId);
+        setMessages([]);
+
+        console.log('📝 Created pending local thread (not yet in Firestore):', newThreadId);
 
         if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
             setIsHistoryPanelOpen(false);
         }
-    }, [activeChatThread, isHistoryPanelOpen, setChatThreads, setCurrentChatThreadId, setIsHistoryPanelOpen]);
+    }, [user?.uid, chatThreads, messages.length, currentChatThreadId, isHistoryPanelOpen, setIsHistoryPanelOpen]);
+
+    // Handle initial thread creation when Firestore loads with no threads
+    useEffect(() => {
+        if (!isFirestoreLoading && !user?.uid) return;
+
+        // If Firestore loaded and there are no threads, and user is logged in, create one
+        if (!isFirestoreLoading && chatThreads.length === 0 && user?.uid && !currentChatThreadId) {
+            startNewChat();
+        }
+
+        // If current thread was deleted, switch to the most recent
+        if (!isFirestoreLoading && chatThreads.length > 0 && currentChatThreadId) {
+            const threadStillExists = chatThreads.some(t => t.id === currentChatThreadId);
+            if (!threadStillExists) {
+                const mostRecentThread = [...chatThreads].sort((a, b) =>
+                    new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
+                )[0];
+                setCurrentChatThreadId(mostRecentThread.id);
+            }
+        }
+    }, [isFirestoreLoading, chatThreads, currentChatThreadId, user?.uid, startNewChat]);
+
+    const getAudioRestoreKey = useCallback((threadId: string, messageId: string) => {
+        return `${threadId}:${messageId}`;
+    }, []);
 
     const restoreAudioFromCache = useCallback(async (messageId: string, threadId: string) => {
+        const restoreKey = getAudioRestoreKey(threadId, messageId);
         try {
-            // Get audio from backend using the provided threadId
-            const blob = await getAudio(messageId, user?.uid, threadId);
+            setMessages(prev => prev.map(m =>
+                m.id === messageId
+                    ? { ...m, audioRestoreFailed: false }
+                    : m
+            ));
 
-            if (blob) {
-                const audioUrl = URL.createObjectURL(blob);
+            // Fetch a time-limited SAS URL from Azure Blob Storage
+            const sasUrl = await getAudioSasUrl(messageId, user?.uid, threadId);
+
+            if (sasUrl) {
                 setMessages(prev => prev.map(m =>
                     m.id === messageId
-                        ? { ...m, audioUrl, isAudioGenerating: false }
+                        ? { ...m, audioUrl: sasUrl, isAudioGenerating: false, audioRestoreFailed: false }
                         : m
                 ));
-                console.log(`🎵 Restored audio from backend for message: ${messageId}`);
+                console.log(`☁️  Restored audio SAS URL for message: ${messageId}`);
             } else {
-                console.warn(`🎵 No audio found on backend for message: ${messageId}`);
+                setMessages(prev => prev.map(m =>
+                    m.id === messageId
+                        ? { ...m, audioRestoreFailed: true }
+                        : m
+                ));
+                console.warn(`☁️  No audio found in Azure for message: ${messageId}`);
             }
         } catch (error) {
+            setMessages(prev => prev.map(m =>
+                m.id === messageId
+                    ? { ...m, audioRestoreFailed: true }
+                    : m
+            ));
             console.error(`Failed to restore audio for message ${messageId}:`, error);
+        } finally {
+            audioRestorationInProgressRef.current.delete(restoreKey);
+            audioRestoreAttemptedRef.current.add(restoreKey);
         }
-    }, [user?.uid]);
+    }, [user?.uid, getAudioRestoreKey]);
+
+    // Auto-restore audio from Azure for messages that have audioBlobName but no audioUrl.
+    // This runs on page load when onSnapshot delivers messages from Firestore,
+    // and also when switching threads via loadChatThread.
+    const audioRestorationInProgressRef = useRef(new Set<string>());
+    const audioRestoreAttemptedRef = useRef(new Set<string>());
+
+    useEffect(() => {
+        // Clear restoration tracking when switching threads/users so each thread can retry cleanly
+        audioRestorationInProgressRef.current.clear();
+        audioRestoreAttemptedRef.current.clear();
+    }, [currentChatThreadId, user?.uid]);
+
+    useEffect(() => {
+        if (!user?.uid || !currentChatThreadId) return;
+
+        for (const message of messages) {
+            if (
+                message.role === 'assistant' &&
+                message.audioBlobName &&
+                !message.audioUrl &&
+                !freshlyGeneratedAudioRefs.current.has(message.id) &&
+                !audioRestorationInProgressRef.current.has(getAudioRestoreKey(currentChatThreadId, message.id)) &&
+                !audioRestoreAttemptedRef.current.has(getAudioRestoreKey(currentChatThreadId, message.id))
+            ) {
+                const restoreKey = getAudioRestoreKey(currentChatThreadId, message.id);
+                audioRestorationInProgressRef.current.add(restoreKey);
+                console.log(`☁️  Auto-restoring audio from Azure for message: ${message.id}`);
+                restoreAudioFromCache(message.id, currentChatThreadId);
+            }
+        }
+    }, [messages, user?.uid, currentChatThreadId, restoreAudioFromCache, getAudioRestoreKey]);
 
     const loadChatThread = useCallback(async (threadId: string) => {
         const thread = chatThreads.find(t => t.id === threadId);
@@ -644,41 +998,98 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.log(`🎵 Loading thread: ${threadId}, messages count: ${thread.messages.length}`);
 
             for (const message of thread.messages) {
-                // Only restore audio for assistant messages that don't have freshly generated audio
-                // Freshly generated audio already has a local Blob URL - no need to fetch from backend
-                if (message.role === 'assistant') {
+                // Only restore audio for assistant messages that have an Azure blob name
+                // and don't have freshly generated audio (those already have a local Blob URL)
+                if (message.role === 'assistant' && message.audioBlobName) {
                     if (freshlyGeneratedAudioRefs.current.has(message.id)) {
-                        console.log(`🎵 Skipping backend fetch for freshly generated audio: ${message.id}`);
+                        console.log(`🎵 Skipping Azure fetch for freshly generated audio: ${message.id}`);
                         continue;
                     }
-                    console.log(`🎵 Restoring audio from backend for message: ${message.id} in thread: ${threadId}`);
+                    console.log(`☁️  Restoring audio from Azure for message: ${message.id} in thread: ${threadId}`);
                     restoreAudioFromCache(message.id, threadId);
                 }
             }
         }
     }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, restoreAudioFromCache]);
 
-    const deleteChatThread = useCallback((threadId: string) => {
-        const remainingThreads = chatThreads.filter(t => t.id !== threadId);
-        setChatThreads(remainingThreads);
+    const deleteChatThread = useCallback(async (threadId: string) => {
+        if (!user?.uid) return;
 
-        if (currentChatThreadId === threadId) {
-            if (remainingThreads.length > 0) {
-                const mostRecentThread = [...remainingThreads].sort((a, b) => new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime())[0];
-                setCurrentChatThreadId(mostRecentThread.id);
+        try {
+            // If thread is pending (local-only, never persisted), just remove locally
+            if (pendingThreadIdsRef.current.has(threadId)) {
+                pendingThreadIdsRef.current.delete(threadId);
+                setChatThreads(prev => prev.filter(t => t.id !== threadId));
+                console.log('📝 Removed pending local thread:', threadId);
             } else {
-                startNewChat();
+                // Delete thread document from Firestore
+                // Note: This doesn't delete the messages subcollection (Firestore limitation)
+                // Messages become orphaned but won't be fetched
+                const threadRef = doc(db, 'users', user.uid, 'threads', threadId);
+                await deleteDoc(threadRef);
+                console.log('🔥 Deleted thread from Firestore:', threadId);
             }
-        }
-    }, [chatThreads, currentChatThreadId, startNewChat, setChatThreads, setCurrentChatThreadId]);
 
-    const clearChatHistory = useCallback(() => {
-        setChatThreads([]);
-        startNewChat();
-        if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
-            setIsHistoryPanelOpen(false);
+            // Switch to another thread if we deleted the current one
+            if (currentChatThreadId === threadId) {
+                const remainingThreads = chatThreads.filter(t => t.id !== threadId);
+                if (remainingThreads.length > 0) {
+                    const mostRecentThread = [...remainingThreads].sort((a, b) =>
+                        new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
+                    )[0];
+                    setCurrentChatThreadId(mostRecentThread.id);
+                } else {
+                    // No threads left, create a new one
+                    startNewChat();
+                }
+            }
+        } catch (error) {
+            console.error('Error deleting chat thread:', error);
+            toast({
+                title: "Error",
+                description: "Failed to delete chat. Please try again.",
+                variant: "destructive",
+            });
         }
-    }, [isHistoryPanelOpen, startNewChat, setChatThreads, setIsHistoryPanelOpen]);
+    }, [user?.uid, currentChatThreadId, chatThreads, startNewChat, toast]);
+
+    const clearChatHistory = useCallback(async () => {
+        if (!user?.uid) return;
+
+        try {
+            // Clear any pending (local-only) threads first
+            pendingThreadIdsRef.current.clear();
+
+            // Get all thread documents and delete them from Firestore
+            const threadsRef = collection(db, 'users', user.uid, 'threads');
+            const snapshot = await getDocs(threadsRef);
+
+            const batch = writeBatch(db);
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+
+            console.log(`🔥 Deleted ${snapshot.docs.length} threads from Firestore`);
+
+            // Reset local state and create a fresh new chat (will be local-only until first message)
+            setChatThreads([]);
+            setCurrentChatThreadId(null);
+            setMessages([]);
+            await startNewChat();
+
+            if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
+                setIsHistoryPanelOpen(false);
+            }
+        } catch (error) {
+            console.error('Error clearing chat history:', error);
+            toast({
+                title: "Error",
+                description: "Failed to clear chat history. Please try again.",
+                variant: "destructive",
+            });
+        }
+    }, [user?.uid, isHistoryPanelOpen, startNewChat, setIsHistoryPanelOpen, toast]);
 
     const getThreadTitle = (threadId: string): string => {
         const thread = chatThreads.find(t => t.id === threadId);

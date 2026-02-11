@@ -14,7 +14,9 @@ export interface Message {
   isLoading?: boolean; // For assistant messages being generated
   processingStatus?: string; // For showing granular LLM processing status
   audioData?: AudioData | null; // For assistant voice responses (legacy)
-  audioUrl?: string; // The URL created from the merged TTS Blob for persistent playback
+  audioUrl?: string; // Playable URL (blob: for freshly generated, SAS URL for restored from Azure)
+  audioBlobName?: string; // Azure Blob path for persistent audio storage (e.g. user/session/msg.wav)
+  audioRestoreFailed?: boolean; // True when Azure SAS URL restoration failed for this message
   isAudioGenerating?: boolean; // To show loading/streaming state in the AudioPlayer UI
   imageUrls?: string[]; // URLs of images to display with the message
   sources?: Source[]; // Sources used to generate the answer

@@ -27,7 +27,7 @@ import {
   User
 } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
-import { useWebSocketContext } from '../../contexts/WebSocketContext';
+import { useSSEContext } from '../../contexts/SSEContext';
 import { validateFileSize, formatFileSize, fetchWithRetry } from '../../lib/utils';
 import { appConfig } from '../../lib/config';
 import Link from 'next/link';
@@ -125,15 +125,14 @@ export function DashboardView() {
   const [selectedFileForChunks, setSelectedFileForChunks] = useState<FileStats | null>(null);
   const { toast } = useToast();
 
-  // Use shared WebSocket connection from context
-  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocketContext();
+  // Use shared SSE connection from context
+  const { isConnected, lastEvent, connectionStatus } = useSSEContext();
 
-  // Debug WebSocket connection
+  // Debug SSE connection
   useEffect(() => {
-    console.log('🔌 WebSocket connected:', isConnected);
-    console.log('🔌 User ID:', userId);
-    console.log('🔌 Session ID:', sessionId);
-  }, [isConnected, userId, sessionId]);
+    console.log('📡 SSE connected:', isConnected);
+    console.log('📡 SSE status:', connectionStatus);
+  }, [isConnected, connectionStatus]);
 
   // Fetch data functions with retry logic
   const fetchFiles = async () => {
@@ -323,11 +322,9 @@ export function DashboardView() {
       console.log('═══════════════════════════════════════════════════════');
       console.log('🚀 [DASHBOARD] Initialization started');
       console.log(`📅 [DASHBOARD] Timestamp: ${new Date().toISOString()}`);
-      console.log(`🔌 [DASHBOARD] Initial WebSocket status:`, {
+      console.log(`📡 [DASHBOARD] Initial SSE status:`, {
         isConnected,
-        connectionStatus,
-        userId: userId.slice(-8),
-        sessionId: sessionId.slice(-8)
+        connectionStatus
       });
       console.log('═══════════════════════════════════════════════════════');
 
@@ -336,20 +333,19 @@ export function DashboardView() {
       // Wait for WebSocket to connect, but with a timeout
       const waitForConnection = new Promise<void>((resolve) => {
         if (isConnected) {
-          console.log('✅ [DASHBOARD] WebSocket already connected, proceeding immediately');
+          console.log('✅ [DASHBOARD] SSE already connected, proceeding immediately');
           resolve();
           return;
         }
 
-        console.log('⏳ [DASHBOARD] WebSocket not connected, starting wait sequence...');
+        console.log('⏳ [DASHBOARD] SSE not connected, starting wait sequence...');
         console.log(`⏱️  [DASHBOARD] Will timeout after 15 seconds`);
 
         let pollCount = 0;
         const maxPolls = 30; // 30 * 500ms = 15 seconds
 
-        // Set a timeout - if WebSocket doesn't connect in 15 seconds, proceed anyway
         timeoutId = setTimeout(() => {
-          console.log('⚠️ [DASHBOARD] WebSocket connection timeout (15s), proceeding with data fetch anyway');
+          console.log('⚠️ [DASHBOARD] SSE connection timeout (15s), proceeding with data fetch anyway');
           console.log(`📊 [DASHBOARD] Final status: isConnected=${isConnected}, connectionStatus=${connectionStatus}`);
           resolve();
         }, 15000);
@@ -369,7 +365,7 @@ export function DashboardView() {
         }, 500);
       });
 
-      console.log('⏸️  [DASHBOARD] Awaiting WebSocket connection...');
+      console.log('⏸️  [DASHBOARD] Awaiting SSE connection...');
       await waitForConnection;
 
       if (!mounted) {
@@ -465,39 +461,27 @@ export function DashboardView() {
     }
   };
 
-  // Handle WebSocket messages for real-time updates
+  // Handle SSE events for real-time updates
   useEffect(() => {
-    if (lastMessage) {
-      console.log('📨 Processing WebSocket message in DashboardView:', lastMessage);
+    if (lastEvent) {
+      console.log('📨 Processing SSE event in DashboardView:', lastEvent);
 
       // Handle user connection notifications
-      if (lastMessage.type === 'user_connected') {
-        console.log('👤 User connected:', lastMessage.user_id);
-        toast({
-          title: "User Connected",
-          description: `User ${lastMessage.user_id?.slice(-8)} joined`,
-          duration: 3000,
-        });
-      } else if (lastMessage.type === 'user_disconnected') {
-        console.log('👤 User disconnected:', lastMessage.user_id);
-        toast({
-          title: "User Disconnected",
-          description: `User ${lastMessage.user_id?.slice(-8)} left`,
-          duration: 3000,
-        });
+      if (lastEvent.type === 'connection_established') {
+        console.log('👤 SSE connection established');
       }
 
       // Update files list when we receive status updates, job updates, or file deletions
-      else if (lastMessage.type === 'status_update' ||
-        lastMessage.type === 'file_deleted' ||
-        lastMessage.type === 'job_status_update' ||
-        lastMessage.type === 'pdf_processing_complete' ||
-        lastMessage.type === 'pdf_processing_failed') {
-        console.log('🔄 Refreshing data due to:', lastMessage.type);
+      else if (lastEvent.type === 'status_update' ||
+        lastEvent.type === 'file_deleted' ||
+        lastEvent.type === 'job_status_update' ||
+        lastEvent.type === 'pdf_processing_complete' ||
+        lastEvent.type === 'pdf_processing_failed') {
+        console.log('🔄 Refreshing data due to:', lastEvent.type);
         refreshData();
       }
     }
-  }, [lastMessage, toast]);
+  }, [lastEvent, toast]);
 
   if (isLoading) {
     return (
@@ -522,7 +506,7 @@ export function DashboardView() {
 
           <div className="flex items-center space-x-2 text-sm opacity-75">
             <User className="w-3 h-3" />
-            <span>User: {user?.username || user?.email || userId.slice(-8)}</span>
+            <span>User: {user?.username || user?.email || 'Unknown'}</span>
           </div>
         </div>
 

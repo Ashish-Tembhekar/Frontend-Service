@@ -35,10 +35,18 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
     stopChunkPlayback, // NEW: Get stop chunk playback function
     requestTTS, // NEW: Get requestTTS function for retry
     setAudioGeneratingForMessage, // NEW: Get function to set generating state
+    currentChatThreadId, // Needed to retry Azure restore for persisted audio
+    restoreAudioFromCache, // Needed to retry Azure restore for persisted audio
   } = useChat();
 
   // NEW: Handler to retry audio generation
   const handleRetryAudio = () => {
+    // If this message has persisted Azure audio, retry restoration first.
+    if (message.audioBlobName && currentChatThreadId) {
+      restoreAudioFromCache(message.id, currentChatThreadId);
+      return;
+    }
+
     if (!message.content) return;
 
     // Immediately set generating state to show streaming UI
@@ -213,10 +221,12 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
         {!isUser && (
           <div className="w-full">
             {/* Show AudioPlayer if this message has audio or is currently generating audio */}
-            {(message.audioUrl || message.isAudioGenerating || currentTtsMessageId === message.id || (currentTtsMessageId === message.id && ttsError)) && (
+            {(message.audioUrl || message.audioBlobName || message.isAudioGenerating || currentTtsMessageId === message.id || (currentTtsMessageId === message.id && ttsError)) && (
               <AudioPlayer
                 audioUrl={message.audioUrl}
                 isGenerating={message.isAudioGenerating || currentTtsMessageId === message.id}
+                isLoadingAudio={!!message.audioBlobName && !message.audioUrl && !message.isAudioGenerating && !message.audioRestoreFailed}
+                audioError={!!message.audioRestoreFailed}
                 isStreamingPaused={currentTtsMessageId === message.id ? ttsIsPaused : false}
                 isStreamingPlaying={currentTtsMessageId === message.id ? ttsIsPlaying : false}
                 progressPercent={currentTtsMessageId === message.id ? ttsProgressPercent : 0}

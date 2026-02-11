@@ -1,241 +1,154 @@
 /**
- * Audio Storage Service - Simple File-Based Backend Storage
- * 
- * Provides persistent storage for audio files via backend file system.
- * Audio is stored per user, session, and message.
+ * Audio Storage Service — Azure Blob Storage
+ *
+ * Uploads TTS audio to Azure Blob Storage via the backend.
+ * Retrieves time-limited SAS URLs for on-demand playback.
  */
 
 import { appConfig } from '../lib/config';
 
 const API_BASE = appConfig.fastApiBaseUrl;
 
-// In-memory cache for audio blob URLs (to avoid repeated server calls)
-const audioCache = new Map<string, string>();
+// In-memory SAS URL cache for the current browser session
+// Avoids re-fetching SAS URLs for messages already played in this session
+const sasUrlCache = new Map<string, string>();
 
-/**
- * Uploads audio to backend file storage.
- */
-async function uploadAudioToServer(
-  userId: string,
-  sessionId: string,
-  messageId: string,
-  audioBlob: Blob
-): Promise<string> {
-  const formData = new FormData();
-  formData.append('file', audioBlob, `${messageId}.wav`);
-
-  const response = await fetch(
-    `${API_BASE}/api/v1/audio/upload?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}&message_id=${encodeURIComponent(messageId)}`,
-    {
-      method: 'POST',
-      body: formData
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to upload audio: ${response.statusText}`);
-  }
-
-  const result = await response.json();
-  return result.file_path;
+function getSasCacheKey(messageId: string, userId: string, sessionId: string): string {
+  return `${userId}:${sessionId}:${messageId}`;
 }
 
 /**
- * Gets audio file from backend file storage.
- */
-async function getAudioFromServer(
-  userId: string,
-  sessionId: string,
-  messageId: string
-): Promise<Blob | null> {
-  try {
-    const url = `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`;
-    console.log(`🎵 Fetching audio from backend: ${url}`);
-
-    const response = await fetch(url, {
-      method: 'GET'
-    });
-
-    if (response.status === 404) {
-      console.log(`🎵 Audio not found on backend (404): ${messageId}`);
-      return null;
-    }
-
-    if (!response.ok) {
-      console.error(`🎵 Failed to get audio from backend: ${response.status} ${response.statusText}`);
-      throw new Error(`Failed to get audio: ${response.statusText}`);
-    }
-
-    console.log(`🎵 Successfully fetched audio from backend: ${messageId}`);
-    return await response.blob();
-  } catch (error) {
-    console.error('Failed to get audio from server:', error);
-    return null;
-  }
-}
-
-/**
- * Deletes audio from backend file storage.
- */
-async function deleteAudioFromServer(
-  userId: string,
-  sessionId: string,
-  messageId: string
-): Promise<void> {
-  const url = `${API_BASE}/api/v1/audio/${messageId}?user_id=${encodeURIComponent(userId)}&session_id=${encodeURIComponent(sessionId)}`;
-
-  const response = await fetch(url, {
-    method: 'DELETE'
-  });
-
-  if (!response.ok && response.status !== 404) {
-    throw new Error(`Failed to delete audio: ${response.statusText}`);
-  }
-}
-
-/**
- * Saves an audio blob to backend file storage
- * Falls back to in-memory cache for immediate playback
- * 
- * @param messageId - The message ID the audio is associated with
- * @param blob - The audio blob to store
- * @param userId - User's unique identifier (required)
- * @param sessionId - Chat session/thread identifier (required)
+ * Upload a WAV blob to Azure Blob Storage via the backend.
+ *
+ * @returns The Azure blob name (path) on success, or null on failure.
  */
 export async function saveAudio(
   messageId: string,
   blob: Blob,
   userId?: string,
-  sessionId?: string
-): Promise<void> {
+  sessionId?: string,
+): Promise<string | null> {
+  if (!userId || !sessionId) {
+    console.warn('☁️  Missing userId or sessionId — cannot upload to Azure');
+    return null;
+  }
+
   try {
-    // Create a local blob URL for immediate use
-    const localUrl = URL.createObjectURL(blob);
-    audioCache.set(messageId, localUrl);
+    const formData = new FormData();
+    formData.append('file', blob, `${messageId}.wav`);
 
-    console.log(`🎵 Audio cached locally for message: ${messageId}`);
+    const url =
+      `${API_BASE}/api/v1/audio/upload` +
+      `?user_id=${encodeURIComponent(userId)}` +
+      `&session_id=${encodeURIComponent(sessionId)}` +
+      `&message_id=${encodeURIComponent(messageId)}`;
 
-    // If we have userId and sessionId, upload to server for persistence
-    if (userId && sessionId) {
-      try {
-        await uploadAudioToServer(userId, sessionId, messageId, blob);
-        console.log(`🎵 Audio saved to backend storage for message: ${messageId}`);
-      } catch (uploadError) {
-        console.warn(`🎵 Failed to upload audio to server (will use local cache): ${uploadError}`);
-        // Continue without throwing - local cache still works
-      }
-    } else {
-      console.warn(`🎵 Missing userId or sessionId, audio will only be cached locally`);
+    const response = await fetch(url, { method: 'POST', body: formData });
+
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
     }
+
+    const result = await response.json();
+    console.log(`☁️  Audio uploaded to Azure: ${result.blob_name}`);
+    return result.blob_name as string;
   } catch (error) {
-    console.error('Error saving audio:', error);
-    throw error;
+    console.error('☁️  Failed to upload audio to Azure:', error);
+    return null;
   }
 }
 
 /**
- * Retrieves an audio blob from backend storage or local cache
- * Returns null if not found
- * 
- * @param messageId - The message ID
- * @param userId - User's unique identifier (required for server retrieval)
- * @param sessionId - Chat session/thread identifier (required for server retrieval)
+ * Get a time-limited SAS URL for an audio blob.
+ *
+ * The SAS URL can be used directly as an <audio> src — no need to
+ * download the blob and create a local Blob URL.
+ *
+ * @returns SAS URL string, or null if not found.
  */
-export async function getAudio(
+export async function getAudioSasUrl(
   messageId: string,
   userId?: string,
-  sessionId?: string
-): Promise<Blob | null> {
-  try {
-    // Check local cache first
-    const cachedUrl = audioCache.get(messageId);
-    if (cachedUrl) {
-      try {
-        const response = await fetch(cachedUrl);
-        if (response.ok) {
-          console.log(`🎵 Retrieved audio from local cache for message: ${messageId}`);
-          return response.blob();
-        }
-      } catch {
-        // Cache entry invalid, remove it
-        audioCache.delete(messageId);
-      }
-    }
-
-    // Try to fetch from server if userId and sessionId are available
-    if (userId && sessionId) {
-      try {
-        const blob = await getAudioFromServer(userId, sessionId, messageId);
-        if (blob) {
-          // Cache the result locally for subsequent accesses
-          const localUrl = URL.createObjectURL(blob);
-          audioCache.set(messageId, localUrl);
-
-          console.log(`🎵 Retrieved audio from backend storage for message: ${messageId}`);
-          return blob;
-        }
-      } catch (fetchError) {
-        console.warn(`🎵 Failed to fetch audio from server: ${fetchError}`);
-      }
-    }
-
-    console.log(`🎵 No audio found for message: ${messageId}`);
+  sessionId?: string,
+): Promise<string | null> {
+  if (!userId || !sessionId) {
+    console.warn('☁️  Missing userId or sessionId — cannot fetch SAS URL');
     return null;
+  }
+
+  // Check session cache first
+  const cacheKey = getSasCacheKey(messageId, userId, sessionId);
+  const cached = sasUrlCache.get(cacheKey);
+  if (cached) {
+    console.log(`☁️  Using cached SAS URL for message: ${messageId}`);
+    return cached;
+  }
+
+  try {
+    const url =
+      `${API_BASE}/api/v1/audio/${encodeURIComponent(messageId)}` +
+      `?user_id=${encodeURIComponent(userId)}` +
+      `&session_id=${encodeURIComponent(sessionId)}`;
+
+    const response = await fetch(url, { method: 'GET' });
+
+    if (response.status === 404) {
+      console.log(`☁️  Audio not found in Azure (404): ${messageId}`);
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    const sasUrl = result.sas_url as string;
+
+    // Cache for the current browser session
+    sasUrlCache.set(cacheKey, sasUrl);
+    console.log(`☁️  SAS URL fetched for message: ${messageId}`);
+    return sasUrl;
   } catch (error) {
-    console.error('Error getting audio:', error);
+    console.error('☁️  Failed to get SAS URL:', error);
     return null;
   }
 }
 
 /**
- * Deletes an audio blob from backend storage
- * 
- * @param messageId - The message ID
- * @param userId - User's unique identifier (required for server deletion)
- * @param sessionId - Chat session/thread identifier (required for server deletion)
+ * Delete an audio blob from Azure via the backend.
  */
 export async function deleteAudio(
   messageId: string,
   userId?: string,
-  sessionId?: string
+  sessionId?: string,
 ): Promise<void> {
+  if (!userId || !sessionId) return;
+
+  // Clear from session cache
+  sasUrlCache.delete(getSasCacheKey(messageId, userId, sessionId));
+
   try {
-    // Remove from local cache
-    const cachedUrl = audioCache.get(messageId);
-    if (cachedUrl) {
-      URL.revokeObjectURL(cachedUrl);
-      audioCache.delete(messageId);
+    const url =
+      `${API_BASE}/api/v1/audio/${encodeURIComponent(messageId)}` +
+      `?user_id=${encodeURIComponent(userId)}` +
+      `&session_id=${encodeURIComponent(sessionId)}`;
+
+    const response = await fetch(url, { method: 'DELETE' });
+
+    if (!response.ok && response.status !== 404) {
+      throw new Error(`Delete failed: ${response.status} ${response.statusText}`);
     }
 
-    // Delete from server if userId and sessionId are available
-    if (userId && sessionId) {
-      try {
-        await deleteAudioFromServer(userId, sessionId, messageId);
-        console.log(`🎵 Audio deleted from backend storage for message: ${messageId}`);
-      } catch (deleteError) {
-        console.warn(`🎵 Failed to delete audio from server: ${deleteError}`);
-      }
-    }
+    console.log(`☁️  Audio deleted from Azure: ${messageId}`);
   } catch (error) {
-    console.error('Error deleting audio:', error);
-    throw error;
+    console.error('☁️  Failed to delete audio from Azure:', error);
   }
 }
 
 /**
- * Clears all cached audio URLs (useful for cleanup)
- * Note: This only clears the local cache, not the server storage
+ * Clear the in-memory SAS URL cache (e.g. on sign-out).
  */
-export async function clearAllAudio(): Promise<void> {
-  try {
-    // Revoke all cached blob URLs
-    audioCache.forEach((url) => {
-      URL.revokeObjectURL(url);
-    });
-    audioCache.clear();
-    console.log('🎵 All local audio cache cleared');
-  } catch (error) {
-    console.error('Error clearing audio cache:', error);
-    throw error;
-  }
+export function clearAllAudio(): void {
+  sasUrlCache.clear();
+  console.log('☁️  SAS URL cache cleared');
 }

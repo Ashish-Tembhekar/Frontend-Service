@@ -18,6 +18,7 @@ interface AudioPlayerProps {
   onStopChunkPlayback?: () => void; // NEW: Callback to stop chunk playback when transitioning
   error?: string | null; // NEW: Error message from TTS service
   audioError?: boolean; // NEW: Whether audio failed to load
+  isLoadingAudio?: boolean; // Whether audio is being fetched from Azure Blob Storage
   onRetry?: () => void; // NEW: Callback to retry audio generation
   onAudioLoadError?: () => void; // NEW: Callback when audio fails to load
 }
@@ -36,6 +37,7 @@ export function AudioPlayer({
   onStopChunkPlayback,
   error = null,
   audioError = false,
+  isLoadingAudio = false,
   onRetry,
   onAudioLoadError,
 }: AudioPlayerProps) {
@@ -293,6 +295,18 @@ export function AudioPlayer({
 
         {/* Volume indicator */}
         <Volume2 className={`h-5 w-5 flex-shrink-0 ${isStreamingPaused ? 'text-gray-400' : 'text-blue-600'}`} />
+      </div>
+    );
+  }
+
+  // Loading from Azure Blob Storage — show loading indicator while SAS URL is being fetched
+  if (isLoadingAudio && !audioUrl) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg shadow-sm mt-2">
+        <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-100 flex-shrink-0">
+          <Loader2 className="h-5 w-5 animate-spin text-green-600" />
+        </div>
+        <span className="text-sm font-medium text-gray-600">Loading audio...</span>
       </div>
     );
   }

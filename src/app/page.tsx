@@ -5,7 +5,7 @@ import { ChatView } from '../components/Chat/ChatView';
 import { ChatHistoryPanel } from '../components/Chat/History/ChatHistoryPanel';
 import { useChat } from '../contexts/ChatContext'; // Import useChat
 import { useAuth } from '../contexts/AuthContext';
-import { useWebSocketContext } from '../contexts/WebSocketContext';
+import { useSSEContext } from '../contexts/SSEContext';
 import { appConfig } from '../lib/config';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { useEffect } from 'react';
@@ -30,23 +30,22 @@ export default function FullScreenChatPage() {
     }
   }, [user, loading, router]);
 
-  // Use shared WebSocket connection from context
-  const { isConnected, lastMessage, connectionStatus, userId, sessionId } = useWebSocketContext();
+  // Use shared SSE connection from context
+  const { isConnected, lastEvent, connectionStatus } = useSSEContext();
 
-  // Debug WebSocket connection
+  // Debug SSE connection
   useEffect(() => {
-    console.log('🔌 Chat WebSocket connected:', isConnected);
-    console.log('🔌 Chat User ID:', userId);
-    console.log('🔌 Chat Session ID:', sessionId);
-  }, [isConnected, userId, sessionId]);
+    console.log('📡 Chat SSE connected:', isConnected);
+    console.log('📡 Chat SSE status:', connectionStatus);
+  }, [isConnected, connectionStatus]);
 
-  // Handle WebSocket messages for chat
+  // Handle SSE events for chat
   useEffect(() => {
-    if (lastMessage) {
-      console.log('📨 Processing WebSocket message in Chat:', lastMessage);
-      // Add any chat-specific message handling here
+    if (lastEvent) {
+      console.log('📨 Processing SSE event in Chat:', lastEvent);
+      // Add any chat-specific event handling here
     }
-  }, [lastMessage]);
+  }, [lastEvent]);
 
   // Show loading screen while checking authentication
   if (loading) {
