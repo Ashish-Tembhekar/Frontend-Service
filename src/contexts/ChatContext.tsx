@@ -356,6 +356,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Track message IDs that have freshly generated audio in the current session
     // These should NOT trigger a backend fetch since they already have local Blob URLs
     const freshlyGeneratedAudioRefs = useRef<Set<string>>(new Set());
+    // Track the originating thread for each TTS request to avoid session-switch races
+    const ttsMessageThreadRef = useRef<Map<string, string>>(new Map());
 
     const handleAudioComplete = useCallback((messageId: string, audioUrl: string) => {
         console.log(`🎵 Audio complete for message ${messageId}, URL: ${audioUrl.substring(0, 50)}...`);
@@ -369,21 +371,25 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, []);
 
     // Called AFTER Azure Blob upload completes (background) — persists audioBlobName to Firestore
-    const handleBlobNameReady = useCallback(async (messageId: string, blobName: string) => {
+    const handleBlobNameReady = useCallback(async (messageId: string, blobName: string, sourceThreadId?: string) => {
         console.log(`☁️  Blob name ready for message ${messageId}: ${blobName}`);
         // Update local state
         setMessages(prev => prev.map(m =>
             m.id === messageId ? { ...m, audioBlobName: blobName } : m
         ));
         // Persist audioBlobName directly to Firestore
-        if (user?.uid && currentChatThreadId) {
+        const resolvedThreadId = sourceThreadId || ttsMessageThreadRef.current.get(messageId) || currentChatThreadId;
+        if (user?.uid && resolvedThreadId) {
             try {
-                const messageDoc = doc(db, 'users', user.uid, 'threads', currentChatThreadId, 'messages', messageId);
+                const messageDoc = doc(db, 'users', user.uid, 'threads', resolvedThreadId, 'messages', messageId);
                 await setDoc(messageDoc, { audioBlobName: blobName }, { merge: true });
-                console.log(`🔥 Persisted audioBlobName to Firestore for message: ${messageId}`);
+                console.log(`🔥 Persisted audioBlobName to Firestore for message: ${messageId} in thread: ${resolvedThreadId}`);
+                ttsMessageThreadRef.current.delete(messageId);
             } catch (error) {
                 console.error(`🔥 Failed to persist audioBlobName for message ${messageId}:`, error);
             }
+        } else {
+            ttsMessageThreadRef.current.delete(messageId);
         }
     }, [user?.uid, currentChatThreadId]);
 
@@ -639,7 +645,11 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Helper to handle the actual API calls for TTS based on provider
     const handleTTSGeneration = async (text: string, messageId: string, lang: string, skipPersistence: boolean = false) => {
         if (!text.trim()) return;
+        if (!currentChatThreadId) return;
 
+        if (!skipPersistence) {
+            ttsMessageThreadRef.current.set(messageId, currentChatThreadId);
+        }
         setAudioGeneratingForMessage(messageId, true);
 
         // Check if we need to connect
@@ -665,6 +675,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         } catch (error) {
             console.error("TTS Request failed", error);
+            ttsMessageThreadRef.current.delete(messageId);
             setAudioGeneratingForMessage(messageId, false);
             toast({
                 title: "TTS Error",

@@ -43,7 +43,7 @@ interface TTSParameters {
 export type OnAudioCompleteCallback = (messageId: string, audioUrl: string) => void;
 
 // Callback type for when Azure Blob upload finishes (fires AFTER background upload)
-export type OnBlobNameReadyCallback = (messageId: string, blobName: string) => void;
+export type OnBlobNameReadyCallback = (messageId: string, blobName: string, sessionId?: string) => void;
 
 export function useStreamingAudio(
   onAudioComplete?: OnAudioCompleteCallback,
@@ -89,6 +89,8 @@ export function useStreamingAudio(
   // Track userId and sessionId in refs for use in callbacks
   const userIdRef = useRef<string | undefined>(userId);
   const sessionIdRef = useRef<string | undefined>(sessionId);
+  const requestUserIdRef = useRef<string | undefined>(undefined);
+  const requestSessionIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     userIdRef.current = userId;
     sessionIdRef.current = sessionId;
@@ -354,12 +356,12 @@ export function useStreamingAudio(
 
             // Upload to Azure Blob Storage in the BACKGROUND (don't block UI transition)
             if (messageId && !skipPersistenceRef.current) {
-              saveAudio(messageId, mergedBlob, userIdRef.current, sessionIdRef.current)
+              saveAudio(messageId, mergedBlob, requestUserIdRef.current, requestSessionIdRef.current)
                 .then((blobName) => {
                   console.log(`☁️  Audio uploaded to Azure for message: ${messageId}, blob: ${blobName}`);
                   // Fire the blob name callback so ChatContext can persist audioBlobName to Firestore
                   if (blobName && onBlobNameReadyRef.current) {
-                    onBlobNameReadyRef.current(messageId, blobName);
+                    onBlobNameReadyRef.current(messageId, blobName, requestSessionIdRef.current);
                   }
                 })
                 .catch(err => {
@@ -642,6 +644,10 @@ export function useStreamingAudio(
   // + UPDATED: requestTTS now accepts skipPersistence
   // + Also accepts provider to format payload correctly if needed (though we rely on WS connection)
   const requestTTS = useCallback((text: string, messageId: string, language: string = 'en', ttsParams?: TTSParameters, provider: 'chatterbox' | 'kokoro' = 'chatterbox', skipPersistence: boolean = false) => {
+    // Capture request-scoped identity/session to avoid cross-thread races when user switches chats mid-stream
+    requestUserIdRef.current = userIdRef.current;
+    requestSessionIdRef.current = sessionIdRef.current;
+
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       setState(prev => ({ ...prev, error: 'TTS service not connected', isLoading: false }));
       // Attempt to reconnect if not connected - but we need to know provider.
