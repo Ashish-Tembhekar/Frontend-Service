@@ -21,6 +21,9 @@ interface AudioPlayerProps {
   isLoadingAudio?: boolean; // Whether audio is being fetched from Azure Blob Storage
   onRetry?: () => void; // NEW: Callback to retry audio generation
   onAudioLoadError?: () => void; // NEW: Callback when audio fails to load
+  // FIX: Swap-transition props for seamless chunk-to-combined audio handoff
+  swapFinalPosition?: number; // Playback position at the moment chunks were swapped
+  swapWasPaused?: boolean; // Whether streaming was paused when swap happened
 }
 
 export function AudioPlayer({
@@ -40,6 +43,9 @@ export function AudioPlayer({
   isLoadingAudio = false,
   onRetry,
   onAudioLoadError,
+  // FIX: Swap-transition props
+  swapFinalPosition,
+  swapWasPaused,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -67,12 +73,20 @@ export function AudioPlayer({
 
   // Track the streaming playback position for seamless transition
   useEffect(() => {
-    // Update the pending seek position while streaming
+    // Update the pending seek position while streaming (legacy fallback)
     if (isGenerating && streamingPlaybackPosition > 0) {
       pendingSeekPosition.current = streamingPlaybackPosition;
       hasAppliedInitialSeek.current = false; // Reset so we seek when transitioning
     }
   }, [isGenerating, streamingPlaybackPosition]);
+
+  // FIX: Also track swap-transition position (this is the primary mechanism now)
+  useEffect(() => {
+    if (swapFinalPosition !== undefined && swapFinalPosition > 0) {
+      pendingSeekPosition.current = swapFinalPosition;
+      hasAppliedInitialSeek.current = false;
+    }
+  }, [swapFinalPosition]);
 
   // Reset state when audioUrl changes, but handle seamless transition
   useEffect(() => {
@@ -117,11 +131,8 @@ export function AudioPlayer({
 
       // Apply pending seek position from streaming (seamless transition)
       if (pendingSeekPosition.current > 0 && !hasAppliedInitialSeek.current) {
-        // IMPORTANT: Stop chunk playback FIRST to prevent audio overlap
-        if (onStopChunkPlayback) {
-          console.log('🎵 Stopping chunk playback before transitioning to combined audio');
-          onStopChunkPlayback();
-        }
+        // NOTE: Chunk playback is already stopped in the hook at merge time.
+        // No need to call onStopChunkPlayback here anymore.
 
         // Clamp to valid range
         const seekTo = Math.min(pendingSeekPosition.current, audioDuration);
@@ -130,8 +141,11 @@ export function AudioPlayer({
         setCurrentTime(seekTo);
         hasAppliedInitialSeek.current = true;
 
+        // FIX: Use swapWasPaused as primary, fall back to isStreamingPaused
+        const shouldStayPaused = swapWasPaused !== undefined ? swapWasPaused : isStreamingPaused;
+
         // Only auto-play if streaming was NOT paused (respect user's pause state)
-        if (!isStreamingPaused) {
+        if (!shouldStayPaused) {
           // Auto-play to maintain continuity (user was already listening)
           audioRef.current.play().then(() => {
             setIsPlaying(true);
@@ -158,7 +172,7 @@ export function AudioPlayer({
         console.log('🎵 Audio ready but not auto-playing (existing audio)');
       }
     }
-  }, [onStopChunkPlayback, isStreamingPaused]);
+  }, [isStreamingPaused, swapWasPaused]);
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current) {

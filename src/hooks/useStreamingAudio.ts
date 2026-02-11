@@ -31,6 +31,10 @@ interface StreamingAudioState {
   currentMessageId: string | null; // The message ID for which audio is being generated
   mergedAudioUrl: string | null; // The URL of the merged audio blob once complete
   streamingPlaybackPosition: number; // NEW: Cumulative playback position in seconds during streaming
+  // FIX: These persist beyond currentMessageId lifecycle for seamless swap
+  swappedMessageId: string | null; // Message ID whose chunks were swapped for combined audio
+  finalStreamingPosition: number; // Playback position at the moment of swap
+  wasPausedAtSwap: boolean; // Whether streaming was paused when swap happened
 }
 
 interface TTSParameters {
@@ -110,6 +114,10 @@ export function useStreamingAudio(
     currentMessageId: null,
     mergedAudioUrl: null,
     streamingPlaybackPosition: 0, // NEW: Start at 0 seconds
+    // FIX: Swap-transition state
+    swappedMessageId: null,
+    finalStreamingPosition: 0,
+    wasPausedAtSwap: false,
   });
 
   const playNextChunk = useCallback(() => {
@@ -340,12 +348,37 @@ export function useStreamingAudio(
             const mergedUrl = URL.createObjectURL(mergedBlob);
             const messageId = currentMessageIdRef.current;
 
-            // Update state: set merged URL and clear currentMessageId so player transitions
+            // FIX: Capture final playback position and paused state BEFORE stopping chunks
+            let finalPosition = completedChunksDurationRef.current;
+            if (currentAudioRef.current && !isNaN(currentAudioRef.current.currentTime)) {
+              finalPosition += currentAudioRef.current.currentTime;
+            }
+            const wasPaused = isPausedRef.current;
+
+            // FIX: Stop chunk playback IMMEDIATELY to prevent overlap
+            // (Don't wait for AudioPlayer's handleLoadedMetadata)
+            if (currentAudioRef.current) {
+              currentAudioRef.current.pause();
+              currentAudioRef.current.currentTime = 0;
+              currentAudioRef.current = null;
+            }
+            playbackQueueRef.current = [];
+            isPlayingRef.current = false;
+
+            console.log(`🎵 Swap: finalPosition=${finalPosition.toFixed(2)}s, wasPaused=${wasPaused}, messageId=${messageId}`);
+
+            // Update state: set merged URL, clear currentMessageId, AND persist swap-transition info
             setState(prev => ({
               ...prev,
               mergedAudioUrl: mergedUrl,
               currentMessageId: null,  // Clear so isGenerating becomes false in AudioPlayer
               isStreaming: false,
+              isPlaying: false,
+              isPaused: false,
+              // FIX: Persist swap-transition state so AudioPlayer can read it
+              swappedMessageId: messageId,
+              finalStreamingPosition: finalPosition,
+              wasPausedAtSwap: wasPaused,
             }));
             currentMessageIdRef.current = null;
 
@@ -701,6 +734,10 @@ export function useStreamingAudio(
       currentMessageId: messageId,
       mergedAudioUrl: null,
       streamingPlaybackPosition: 0, // Reset playback position
+      // Reset swap-transition state for new request
+      swappedMessageId: null,
+      finalStreamingPosition: 0,
+      wasPausedAtSwap: false,
     }));
 
     // + UPDATED: Send the request with TTS parameters based on provider
@@ -778,6 +815,9 @@ export function useStreamingAudio(
         currentMessageId: null,
         mergedAudioUrl: null,
         streamingPlaybackPosition: 0, // Reset playback position
+        swappedMessageId: null,
+        finalStreamingPosition: 0,
+        wasPausedAtSwap: false,
       };
     });
   }, [stopAudio, stopHeartbeat, stopStreamingTimeout]);

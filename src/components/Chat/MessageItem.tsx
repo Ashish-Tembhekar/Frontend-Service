@@ -37,6 +37,10 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
     setAudioGeneratingForMessage, // NEW: Get function to set generating state
     currentChatThreadId, // Needed to retry Azure restore for persisted audio
     restoreAudioFromCache, // Needed to retry Azure restore for persisted audio
+    // FIX: Swap-transition state
+    ttsSwappedMessageId,
+    ttsFinalStreamingPosition,
+    ttsWasPausedAtSwap,
   } = useChat();
 
   // NEW: Handler to retry audio generation
@@ -241,6 +245,9 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
                 onAudioLoadError={() => {
                   console.error(`🎵 Audio failed to load for message: ${message.id}`);
                 }}
+                // FIX: Pass swap-transition state for seamless chunk-to-combined audio handoff
+                swapFinalPosition={ttsSwappedMessageId === message.id ? ttsFinalStreamingPosition : undefined}
+                swapWasPaused={ttsSwappedMessageId === message.id ? ttsWasPausedAtSwap : undefined}
               />
             )}
           </div>

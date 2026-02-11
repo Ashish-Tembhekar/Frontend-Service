@@ -73,6 +73,10 @@ interface ChatContextType {
     ttsUsage: TTSUsageData | null;
     ttsStreamingPlaybackPosition: number;
     currentTtsMessageId: string | null;
+    // FIX: Swap-transition state for seamless chunk-to-combined audio transition
+    ttsSwappedMessageId: string | null;
+    ttsFinalStreamingPosition: number;
+    ttsWasPausedAtSwap: boolean;
 
     // Role config
     chatbotRole: string;
@@ -853,6 +857,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const startNewChat = useCallback(async () => {
         if (!user?.uid) return;
 
+        // FIX: Stop any currently playing audio when switching to a new chat
+        streamingAudio.stopAudio();
+
         // Check if there's already a pending (local-only) empty "New Chat" thread we can reuse
         const existingPendingThread = chatThreads.find(t =>
             pendingThreadIdsRef.current.has(t.id) && t.title === 'New Chat'
@@ -899,7 +906,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
             setIsHistoryPanelOpen(false);
         }
-    }, [user?.uid, chatThreads, messages.length, currentChatThreadId, isHistoryPanelOpen, setIsHistoryPanelOpen]);
+    }, [user?.uid, chatThreads, messages.length, currentChatThreadId, isHistoryPanelOpen, setIsHistoryPanelOpen, streamingAudio]);
 
     // Handle initial thread creation when Firestore loads with no threads
     useEffect(() => {
@@ -1001,6 +1008,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const loadChatThread = useCallback(async (threadId: string) => {
         const thread = chatThreads.find(t => t.id === threadId);
         if (thread) {
+            // FIX: Stop any currently playing audio (streaming chunks or combined) when switching sessions
+            // This prevents streaming chunks from continuing to play in the background
+            streamingAudio.stopAudio();
+
             setCurrentChatThreadId(threadId);
             if (isHistoryPanelOpen && typeof window !== 'undefined' && window.innerWidth < 768) {
                 setIsHistoryPanelOpen(false);
@@ -1021,7 +1032,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 }
             }
         }
-    }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, restoreAudioFromCache]);
+    }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, restoreAudioFromCache, streamingAudio]);
 
     const deleteChatThread = useCallback(async (threadId: string) => {
         if (!user?.uid) return;
@@ -1157,6 +1168,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             ttsUsage: streamingAudio.ttsUsage,
             ttsStreamingPlaybackPosition: streamingAudio.streamingPlaybackPosition,
             currentTtsMessageId: streamingAudio.currentMessageId,
+            // FIX: Swap-transition state
+            ttsSwappedMessageId: streamingAudio.swappedMessageId,
+            ttsFinalStreamingPosition: streamingAudio.finalStreamingPosition,
+            ttsWasPausedAtSwap: streamingAudio.wasPausedAtSwap,
 
             chatbotRole,
             setChatbotRole,
