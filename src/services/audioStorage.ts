@@ -71,8 +71,10 @@ export async function getAudioSasUrl(
   userId?: string,
   sessionId?: string,
 ): Promise<string | null> {
+  console.log(`🔍 [audioStorage.getAudioSasUrl] CALLED — messageId=${messageId}, userId=${userId}, sessionId=${sessionId}`);
+
   if (!userId || !sessionId) {
-    console.warn('☁️  Missing userId or sessionId — cannot fetch SAS URL');
+    console.warn(`🔍 [audioStorage.getAudioSasUrl] EARLY RETURN — missing userId(${userId}) or sessionId(${sessionId})`);
     return null;
   }
 
@@ -80,9 +82,10 @@ export async function getAudioSasUrl(
   const cacheKey = getSasCacheKey(messageId, userId, sessionId);
   const cached = sasUrlCache.get(cacheKey);
   if (cached) {
-    console.log(`☁️  Using cached SAS URL for message: ${messageId}`);
+    console.log(`🔍 [audioStorage.getAudioSasUrl] CACHE HIT — key=${cacheKey}, returning cached SAS URL`);
     return cached;
   }
+  console.log(`🔍 [audioStorage.getAudioSasUrl] CACHE MISS — key=${cacheKey}, fetching from backend...`);
 
   try {
     const url =
@@ -90,26 +93,36 @@ export async function getAudioSasUrl(
       `?user_id=${encodeURIComponent(userId)}` +
       `&session_id=${encodeURIComponent(sessionId)}`;
 
+    console.log(`🔍 [audioStorage.getAudioSasUrl] FETCHING — url=${url}`);
+    const fetchStart = performance.now();
     const response = await fetch(url, { method: 'GET' });
+    const fetchDuration = (performance.now() - fetchStart).toFixed(0);
+    console.log(`🔍 [audioStorage.getAudioSasUrl] RESPONSE — status=${response.status}, duration=${fetchDuration}ms`);
 
     if (response.status === 404) {
-      console.log(`☁️  Audio not found in Azure (404): ${messageId}`);
+      console.log(`🔍 [audioStorage.getAudioSasUrl] NOT FOUND (404) — messageId=${messageId}`);
       return null;
     }
 
     if (!response.ok) {
+      console.error(`🔍 [audioStorage.getAudioSasUrl] HTTP ERROR — status=${response.status} ${response.statusText}`);
       throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
     }
 
     const result = await response.json();
     const sasUrl = result.sas_url as string;
 
+    if (!sasUrl) {
+      console.warn(`🔍 [audioStorage.getAudioSasUrl] EMPTY SAS URL — response body:`, result);
+      return null;
+    }
+
     // Cache for the current browser session
     sasUrlCache.set(cacheKey, sasUrl);
-    console.log(`☁️  SAS URL fetched for message: ${messageId}`);
+    console.log(`🔍 [audioStorage.getAudioSasUrl] SUCCESS — cached SAS URL for messageId=${messageId}, url=${sasUrl.substring(0, 80)}...`);
     return sasUrl;
   } catch (error) {
-    console.error('☁️  Failed to get SAS URL:', error);
+    console.error(`🔍 [audioStorage.getAudioSasUrl] EXCEPTION — messageId=${messageId}:`, error);
     return null;
   }
 }

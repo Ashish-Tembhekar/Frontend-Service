@@ -16,6 +16,7 @@ export interface Message {
   audioData?: AudioData | null; // For assistant voice responses (legacy)
   audioUrl?: string; // Playable URL (blob: for freshly generated, SAS URL for restored from Azure)
   audioBlobName?: string; // Azure Blob path for persistent audio storage (e.g. user/session/msg.wav)
+  isAudioLoading?: boolean; // True only while lazy-loading audio URL from Azure after user clicks play
   audioRestoreFailed?: boolean; // True when Azure SAS URL restoration failed for this message
   isAudioGenerating?: boolean; // To show loading/streaming state in the AudioPlayer UI
   imageUrls?: string[]; // URLs of images to display with the message

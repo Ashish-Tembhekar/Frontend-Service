@@ -22,6 +22,8 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
     disconnectChatterboxTTS,
   } = useChat();
   const messagesContainerRef = useRef<HTMLDivElement>(null); // Ref for the scrollable viewport
+  const prevMessageCountRef = useRef(0);
+  const prevLastMessageIdRef = useRef<string | null>(null);
 
   // Establish Chatterbox WebSocket connection when user is in chat window
   // (Only if Chatterbox is the selected TTS provider)
@@ -34,9 +36,18 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
 
   // Scroll to bottom effect
   useEffect(() => {
-    if (messagesContainerRef.current) {
+    const currentCount = messages.length;
+    const currentLastMessageId = currentCount > 0 ? messages[currentCount - 1].id : null;
+    const shouldAutoScroll =
+      currentCount > prevMessageCountRef.current ||
+      currentLastMessageId !== prevLastMessageIdRef.current;
+
+    if (shouldAutoScroll && messagesContainerRef.current) {
       messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
+
+    prevMessageCountRef.current = currentCount;
+    prevLastMessageIdRef.current = currentLastMessageId;
   }, [messages]);
 
   return (

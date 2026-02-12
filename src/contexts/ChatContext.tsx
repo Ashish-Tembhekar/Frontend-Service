@@ -286,6 +286,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 });
                 console.log(`🔥 Received ${firestoreMsgs.length} messages from Firestore`);
 
+                // 🔍 DEBUG: Log audio state of each message from Firestore
+                const audioMsgs = firestoreMsgs.filter(m => m.audioBlobName);
+                if (audioMsgs.length > 0) {
+                    console.log(`🔍 [onSnapshot] ${audioMsgs.length} message(s) with audioBlobName:`);
+                    for (const m of audioMsgs) {
+                        console.log(`🔍 [onSnapshot]   id=${m.id}, audioBlobName=${m.audioBlobName}, audioUrl=${m.audioUrl ?? 'NONE'}, audioRestoreFailed=${(m as any).audioRestoreFailed ?? 'NONE'}`);
+                    }
+                }
+
                 // Remove any pending IDs that now exist in Firestore (they've been persisted)
                 const firestoreIds = new Set(firestoreMsgs.map(m => m.id));
                 for (const id of pendingMessageIdsRef.current) {
@@ -300,16 +309,45 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 setMessages(prev => {
                     // Build a map of local audioUrls for freshly generated audio
                     const localAudioUrls = new Map<string, string>();
+                    // 🔍 DEBUG: Also preserve audioRestoreFailed state from local
+                    const localAudioRestoreState = new Map<string, { audioRestoreFailed?: boolean; audioUrl?: string }>();
                     for (const msg of prev) {
                         if (msg.audioUrl && freshlyGeneratedAudioRefs.current.has(msg.id)) {
                             localAudioUrls.set(msg.id, msg.audioUrl);
+                        }
+                        // 🔍 DEBUG: Track all local audio states that would be wiped by onSnapshot
+                        if (msg.audioBlobName) {
+                            localAudioRestoreState.set(msg.id, {
+                                audioRestoreFailed: msg.audioRestoreFailed,
+                                audioUrl: msg.audioUrl,
+                            });
+                        }
+                    }
+
+                    if (localAudioRestoreState.size > 0) {
+                        console.log(`🔍 [onSnapshot merge] Local audio states BEFORE merge:`);
+                        for (const [id, state] of localAudioRestoreState) {
+                            console.log(`🔍 [onSnapshot merge]   id=${id}, audioUrl=${state.audioUrl ? state.audioUrl.substring(0, 50) + '...' : 'NONE'}, audioRestoreFailed=${state.audioRestoreFailed}`);
                         }
                     }
 
                     // Start with Firestore messages, preserving local audioUrls
                     const merged: Message[] = firestoreMsgs.map(msg => {
                         const localUrl = localAudioUrls.get(msg.id);
-                        return localUrl ? { ...msg, audioUrl: localUrl } : msg;
+                        if (localUrl) {
+                            console.log(`🔍 [onSnapshot merge] Preserving local audioUrl for freshly generated msg=${msg.id}`);
+                            return { ...msg, audioUrl: localUrl };
+                        }
+                        // 🔍 DEBUG: Warn when onSnapshot creates a message with audioBlobName but no audioUrl
+                        // This is the state that shows "Loading audio..." — is it expected or a wipe?
+                        const prevState = localAudioRestoreState.get(msg.id);
+                        if (msg.audioBlobName && prevState?.audioUrl && !localUrl) {
+                            console.warn(`🔍 [onSnapshot merge] ⚠️ WIPING audioUrl for msg=${msg.id}! Had audioUrl=${prevState.audioUrl.substring(0, 50)}... but Firestore doesn't carry it. audioRestoreFailed was: ${prevState.audioRestoreFailed}`);
+                        }
+                        if (msg.audioBlobName && prevState?.audioRestoreFailed) {
+                            console.warn(`🔍 [onSnapshot merge] ⚠️ WIPING audioRestoreFailed=true for msg=${msg.id}! onSnapshot data doesn't carry this flag → will re-show loading spinner`);
+                        }
+                        return msg;
                     });
 
                     // Append any pending messages not yet in Firestore
@@ -320,6 +358,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                             if (!firestoreIds.has(pm.id)) {
                                 merged.push(pm);
                             }
+                        }
+                    }
+
+                    // 🔍 DEBUG: Log final merged state for audio messages
+                    const mergedAudioMsgs = merged.filter(m => m.audioBlobName);
+                    if (mergedAudioMsgs.length > 0) {
+                        console.log(`🔍 [onSnapshot merge] AFTER merge — ${mergedAudioMsgs.length} audio message(s):`);
+                        for (const m of mergedAudioMsgs) {
+                            console.log(`🔍 [onSnapshot merge]   id=${m.id}, audioUrl=${m.audioUrl ? 'SET' : 'NONE'}, audioRestoreFailed=${m.audioRestoreFailed ?? 'undefined'}`);
                         }
                     }
 
@@ -935,75 +982,72 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const restoreAudioFromCache = useCallback(async (messageId: string, threadId: string) => {
         const restoreKey = getAudioRestoreKey(threadId, messageId);
+        if (audioRestorationInProgressRef.current.has(restoreKey)) {
+            return;
+        }
+        audioRestorationInProgressRef.current.add(restoreKey);
+        console.log(`🔍 [restoreAudioFromCache] CALLED — messageId=${messageId}, threadId=${threadId}, restoreKey=${restoreKey}`);
+        console.log(`🔍 [restoreAudioFromCache] Current state — inProgress: [${[...audioRestorationInProgressRef.current].join(', ')}], attempted: [${[...audioRestoreAttemptedRef.current].join(', ')}]`);
         try {
+            // Clear prior failure flag before attempt
             setMessages(prev => prev.map(m =>
                 m.id === messageId
-                    ? { ...m, audioRestoreFailed: false }
+                    ? { ...m, audioRestoreFailed: false, isAudioLoading: true }
                     : m
             ));
 
             // Fetch a time-limited SAS URL from Azure Blob Storage
+            console.log(`🔍 [restoreAudioFromCache] Calling getAudioSasUrl...`);
+            const fetchStart = performance.now();
             const sasUrl = await getAudioSasUrl(messageId, user?.uid, threadId);
+            const fetchDuration = (performance.now() - fetchStart).toFixed(0);
+            console.log(`🔍 [restoreAudioFromCache] getAudioSasUrl returned in ${fetchDuration}ms — result=${sasUrl ? 'SAS URL obtained' : 'NULL'}`);
 
             if (sasUrl) {
-                setMessages(prev => prev.map(m =>
-                    m.id === messageId
-                        ? { ...m, audioUrl: sasUrl, isAudioGenerating: false, audioRestoreFailed: false }
-                        : m
-                ));
-                console.log(`☁️  Restored audio SAS URL for message: ${messageId}`);
+                setMessages(prev => {
+                    const found = prev.find(m => m.id === messageId);
+                    console.log(`🔍 [restoreAudioFromCache] Setting audioUrl on message — found in state: ${!!found}, current audioUrl: ${found?.audioUrl ? 'SET' : 'NONE'}`);
+                    return prev.map(m =>
+                        m.id === messageId
+                            ? { ...m, audioUrl: sasUrl, isAudioGenerating: false, audioRestoreFailed: false, isAudioLoading: false }
+                            : m
+                    );
+                });
+                console.log(`☁️ Azure blob link for ${messageId}: ${sasUrl}`);
+                console.log(`🔍 [restoreAudioFromCache] ✅ SUCCESS — restored SAS URL for messageId=${messageId}`);
             } else {
                 setMessages(prev => prev.map(m =>
                     m.id === messageId
-                        ? { ...m, audioRestoreFailed: true }
+                        ? { ...m, audioRestoreFailed: true, isAudioLoading: false }
                         : m
                 ));
-                console.warn(`☁️  No audio found in Azure for message: ${messageId}`);
+                console.warn(`🔍 [restoreAudioFromCache] ❌ FAILED — no SAS URL returned for messageId=${messageId}`);
             }
         } catch (error) {
             setMessages(prev => prev.map(m =>
                 m.id === messageId
-                    ? { ...m, audioRestoreFailed: true }
+                    ? { ...m, audioRestoreFailed: true, isAudioLoading: false }
                     : m
             ));
-            console.error(`Failed to restore audio for message ${messageId}:`, error);
+            console.error(`🔍 [restoreAudioFromCache] ❌ EXCEPTION — messageId=${messageId}:`, error);
         } finally {
             audioRestorationInProgressRef.current.delete(restoreKey);
             audioRestoreAttemptedRef.current.add(restoreKey);
+            console.log(`🔍 [restoreAudioFromCache] FINALLY — removed from inProgress, added to attempted. restoreKey=${restoreKey}`);
+            console.log(`🔍 [restoreAudioFromCache] Post-finally state — inProgress: [${[...audioRestorationInProgressRef.current].join(', ')}], attempted: [${[...audioRestoreAttemptedRef.current].join(', ')}]`);
         }
     }, [user?.uid, getAudioRestoreKey]);
 
-    // Auto-restore audio from Azure for messages that have audioBlobName but no audioUrl.
-    // This runs on page load when onSnapshot delivers messages from Firestore,
-    // and also when switching threads via loadChatThread.
+    // Lazy restoration tracking for on-demand audio fetches.
     const audioRestorationInProgressRef = useRef(new Set<string>());
     const audioRestoreAttemptedRef = useRef(new Set<string>());
 
     useEffect(() => {
         // Clear restoration tracking when switching threads/users so each thread can retry cleanly
+        console.log(`🔍 [audioRestore cleanup] Thread/user changed — clearing inProgress and attempted sets. threadId=${currentChatThreadId}, userId=${user?.uid}`);
         audioRestorationInProgressRef.current.clear();
         audioRestoreAttemptedRef.current.clear();
     }, [currentChatThreadId, user?.uid]);
-
-    useEffect(() => {
-        if (!user?.uid || !currentChatThreadId) return;
-
-        for (const message of messages) {
-            if (
-                message.role === 'assistant' &&
-                message.audioBlobName &&
-                !message.audioUrl &&
-                !freshlyGeneratedAudioRefs.current.has(message.id) &&
-                !audioRestorationInProgressRef.current.has(getAudioRestoreKey(currentChatThreadId, message.id)) &&
-                !audioRestoreAttemptedRef.current.has(getAudioRestoreKey(currentChatThreadId, message.id))
-            ) {
-                const restoreKey = getAudioRestoreKey(currentChatThreadId, message.id);
-                audioRestorationInProgressRef.current.add(restoreKey);
-                console.log(`☁️  Auto-restoring audio from Azure for message: ${message.id}`);
-                restoreAudioFromCache(message.id, currentChatThreadId);
-            }
-        }
-    }, [messages, user?.uid, currentChatThreadId, restoreAudioFromCache, getAudioRestoreKey]);
 
     const loadChatThread = useCallback(async (threadId: string) => {
         const thread = chatThreads.find(t => t.id === threadId);
@@ -1019,20 +1063,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
             console.log(`🎵 Loading thread: ${threadId}, messages count: ${thread.messages.length}`);
 
-            for (const message of thread.messages) {
-                // Only restore audio for assistant messages that have an Azure blob name
-                // and don't have freshly generated audio (those already have a local Blob URL)
-                if (message.role === 'assistant' && message.audioBlobName) {
-                    if (freshlyGeneratedAudioRefs.current.has(message.id)) {
-                        console.log(`🎵 Skipping Azure fetch for freshly generated audio: ${message.id}`);
-                        continue;
-                    }
-                    console.log(`☁️  Restoring audio from Azure for message: ${message.id} in thread: ${threadId}`);
-                    restoreAudioFromCache(message.id, threadId);
-                }
-            }
         }
-    }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, restoreAudioFromCache, streamingAudio]);
+    }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, streamingAudio]);
 
     const deleteChatThread = useCallback(async (threadId: string) => {
         if (!user?.uid) return;
@@ -1211,3 +1243,4 @@ export const useChat = (): ChatContextType => {
     }
     return context;
 };
+

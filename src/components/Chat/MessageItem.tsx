@@ -222,6 +222,14 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
         )}
 
         {/* Audio Player - Shows for assistant messages with audio or currently generating */}
+        {!isUser && (() => {
+          // 🔍 DEBUG: Log audio state for every assistant message with audioBlobName
+          if (message.audioBlobName || message.audioUrl || message.isAudioGenerating) {
+            const computedIsLoadingAudio = !!message.audioBlobName && !message.audioUrl && !message.isAudioGenerating && !message.audioRestoreFailed;
+            console.log(`🔍 [MessageItem RENDER] msg=${message.id}: audioUrl=${message.audioUrl ? 'SET' : 'NONE'}, audioBlobName=${message.audioBlobName ? 'SET' : 'NONE'}, isAudioGenerating=${message.isAudioGenerating}, audioRestoreFailed=${message.audioRestoreFailed}, → isLoadingAudio=${computedIsLoadingAudio}`);
+          }
+          return null;
+        })()}
         {!isUser && (
           <div className="w-full">
             {/* Show AudioPlayer if this message has audio or is currently generating audio */}
@@ -229,7 +237,11 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
               <AudioPlayer
                 audioUrl={message.audioUrl}
                 isGenerating={message.isAudioGenerating || currentTtsMessageId === message.id}
-                isLoadingAudio={!!message.audioBlobName && !message.audioUrl && !message.isAudioGenerating && !message.audioRestoreFailed}
+                isLoadingAudio={!!message.isAudioLoading}
+                hasDeferredAudio={!!message.audioBlobName}
+                onRequestAudio={message.audioBlobName && currentChatThreadId
+                  ? () => restoreAudioFromCache(message.id, currentChatThreadId)
+                  : undefined}
                 audioError={!!message.audioRestoreFailed}
                 isStreamingPaused={currentTtsMessageId === message.id ? ttsIsPaused : false}
                 isStreamingPlaying={currentTtsMessageId === message.id ? ttsIsPlaying : false}

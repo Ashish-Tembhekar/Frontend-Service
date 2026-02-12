@@ -19,6 +19,8 @@ interface AudioPlayerProps {
   error?: string | null; // NEW: Error message from TTS service
   audioError?: boolean; // NEW: Whether audio failed to load
   isLoadingAudio?: boolean; // Whether audio is being fetched from Azure Blob Storage
+  hasDeferredAudio?: boolean; // Message has persisted Azure audio but URL is not fetched yet
+  onRequestAudio?: () => void; // Fetch audio URL lazily when user clicks play
   onRetry?: () => void; // NEW: Callback to retry audio generation
   onAudioLoadError?: () => void; // NEW: Callback when audio fails to load
   // FIX: Swap-transition props for seamless chunk-to-combined audio handoff
@@ -41,6 +43,8 @@ export function AudioPlayer({
   error = null,
   audioError = false,
   isLoadingAudio = false,
+  hasDeferredAudio = false,
+  onRequestAudio,
   onRetry,
   onAudioLoadError,
   // FIX: Swap-transition props
@@ -62,6 +66,8 @@ export function AudioPlayer({
   const prevIsGenerating = useRef(isGenerating);
   // Track if we've auto-played this audio already
   const hasAutoPlayed = useRef(false);
+  // Track whether user explicitly requested lazy playback (single-click fetch+play UX)
+  const lazyPlayRequestedRef = useRef(false);
 
   // Cleanup audio URL when component unmounts or URL changes
   useEffect(() => {
@@ -167,9 +173,18 @@ export function AudioPlayer({
         });
         hasAutoPlayed.current = true;
       } else {
-        // Audio already exists (loading old messages or switching chat sessions)
-        // Don't auto-play
-        console.log('🎵 Audio ready but not auto-playing (existing audio)');
+        if (lazyPlayRequestedRef.current) {
+          lazyPlayRequestedRef.current = false;
+          audioRef.current.play().then(() => {
+            setIsPlaying(true);
+          }).catch(err => {
+            console.log('🎵 Auto-play after lazy load was blocked:', err);
+          });
+        } else {
+          // Audio already exists (loading old messages or switching chat sessions)
+          // Don't auto-play
+          console.log('🎵 Audio ready but not auto-playing (existing audio)');
+        }
       }
     }
   }, [isStreamingPaused, swapWasPaused]);
@@ -189,15 +204,21 @@ export function AudioPlayer({
   }, []);
 
   const togglePlayPause = useCallback(() => {
-    if (!audioRef.current || !isReady) return;
+    if (!audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
-    } else {
-      audioRef.current.play().catch(console.error);
-      setIsPlaying(true);
+      return;
     }
+
+    // Allow first-play even before metadata is ready (lazy-load flow)
+    audioRef.current.play().then(() => {
+      setIsPlaying(true);
+      if (!isReady) {
+        setIsReady(true);
+      }
+    }).catch(console.error);
   }, [isPlaying, isReady]);
 
   const handleReplay = useCallback(() => {
@@ -315,12 +336,34 @@ export function AudioPlayer({
 
   // Loading from Azure Blob Storage — show loading indicator while SAS URL is being fetched
   if (isLoadingAudio && !audioUrl) {
+    console.log(`🔍 [AudioPlayer] RENDERING "Loading audio..." state — isLoadingAudio=${isLoadingAudio}, audioUrl=${audioUrl}, audioError=${audioError}, isGenerating=${isGenerating}`);
     return (
       <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg shadow-sm mt-2">
         <div className="w-10 h-10 flex items-center justify-center rounded-full bg-green-100 flex-shrink-0">
           <Loader2 className="h-5 w-5 animate-spin text-green-600" />
         </div>
         <span className="text-sm font-medium text-gray-600">Loading audio...</span>
+      </div>
+    );
+  }
+
+  if (hasDeferredAudio && !audioUrl) {
+    return (
+      <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg shadow-sm mt-2">
+        <button
+          onClick={() => {
+            lazyPlayRequestedRef.current = true;
+            onRequestAudio?.();
+          }}
+          disabled={!onRequestAudio}
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white transition-colors shadow-md"
+          aria-label="Load and play audio"
+        >
+          <Play className="h-5 w-5 ml-0.5" />
+        </button>
+        <div className="flex-1">
+          <span className="text-sm font-medium text-gray-700">Play audio</span>
+        </div>
       </div>
     );
   }
@@ -338,6 +381,7 @@ export function AudioPlayer({
         ref={audioRef}
         src={audioUrl}
         onLoadedMetadata={handleLoadedMetadata}
+        onCanPlay={() => setIsReady(true)}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}
         onError={(e) => {
@@ -352,8 +396,7 @@ export function AudioPlayer({
       {/* Play/Pause Button */}
       <button
         onClick={togglePlayPause}
-        disabled={!isReady}
-        className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-700 disabled:bg-gray-300 text-white transition-colors shadow-md"
+        className="w-10 h-10 flex items-center justify-center rounded-full bg-green-600 hover:bg-green-700 text-white transition-colors shadow-md"
         aria-label={isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? (
