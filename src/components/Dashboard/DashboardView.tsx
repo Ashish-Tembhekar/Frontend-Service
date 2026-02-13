@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -102,6 +102,8 @@ export function DashboardView() {
   const [uploadConfig, setUploadConfig] = useState<UploadConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragCounterRef = useRef(0);
   const [fetchErrors, setFetchErrors] = useState<{
     files?: string;
     stats?: string;
@@ -119,6 +121,8 @@ export function DashboardView() {
     setTtsCfgWeight,
     ttsRefAudioFile,
     setTtsRefAudioFile,
+    ttsAutoPickRefAudioByLanguage,
+    setTtsAutoPickRefAudioByLanguage,
   } = useChat();
   const [selectedFile, setSelectedFile] = useState<FileStats | null>(null);
   const [isChunksModalOpen, setIsChunksModalOpen] = useState(false);
@@ -127,6 +131,19 @@ export function DashboardView() {
 
   // Use shared SSE connection from context
   const { isConnected, lastEvent, connectionStatus } = useSSEContext();
+
+  const parseUploadError = async (response: Response): Promise<string> => {
+    const rawText = await response.text();
+    if (!rawText) {
+      return response.statusText || "Upload failed";
+    }
+    try {
+      const parsed = JSON.parse(rawText);
+      return parsed.detail || parsed.error || rawText;
+    } catch {
+      return rawText;
+    }
+  };
 
   // Debug SSE connection
   useEffect(() => {
@@ -228,6 +245,16 @@ export function DashboardView() {
         body: formData,
       });
 
+      if (response.status === 409) {
+        const message = await parseUploadError(response);
+        toast({
+          title: "File already exists",
+          description: message || `${file.name} is already in the database.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (response.ok) {
         const result = await response.json();
         toast({
@@ -236,7 +263,8 @@ export function DashboardView() {
         });
         console.log('✅ Upload completed, result:', result);
       } else {
-        throw new Error('Upload failed');
+        const message = await parseUploadError(response);
+        throw new Error(message || 'Upload failed');
       }
     } catch (error) {
       console.error('❌ Upload error:', error);
@@ -248,6 +276,19 @@ export function DashboardView() {
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleDroppedFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    if (isUploading) return;
+    if (files.length > 1) {
+      toast({
+        title: "Multiple files detected",
+        description: "Please drop one file at a time.",
+        variant: "destructive",
+      });
+    }
+    await handleFileUpload(files[0]);
   };
 
   // Delete file function
@@ -288,6 +329,39 @@ export function DashboardView() {
     }
     // Reset input
     event.target.value = '';
+  };
+
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isUploading) return;
+    dragCounterRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isUploading) return;
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isUploading) return;
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragActive(false);
+    if (isUploading) return;
+    await handleDroppedFiles(event.dataTransfer.files);
   };
 
   // Get status badge
@@ -642,6 +716,37 @@ export function DashboardView() {
         </div>
       </div>
 
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => !isUploading && document.getElementById('file-upload')?.click()}
+        onKeyDown={(event) => {
+          if (isUploading) return;
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            document.getElementById('file-upload')?.click();
+          }
+        }}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        aria-label="Upload a file by dragging and dropping"
+        className={`flex items-center justify-center border-2 border-dashed rounded-lg px-6 py-8 text-center transition-colors duration-200 ${
+          isDragActive ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+        } ${isUploading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+      >
+        <div>
+          <div className="flex items-center justify-center gap-2 text-sm font-medium">
+            <Upload className="w-4 h-4" />
+            Drag and drop a file here
+          </div>
+          <div className="mt-1 text-xs">
+            or click to browse. Supported: .pdf, .docx, .doc, .txt, .md
+          </div>
+        </div>
+      </div>
+
       {/* Statistics Cards : Please on the developer mode in the .env file to render the developers ui */}
       {dashboardStats && (
         <div className="flex flex-col sm:flex-row flex-wrap gap-4">
@@ -923,9 +1028,11 @@ export function DashboardView() {
             exaggeration={ttsExaggeration}
             cfgWeight={ttsCfgWeight}
             selectedRefAudio={ttsRefAudioFile}
+            autoPickRefAudioByLanguage={ttsAutoPickRefAudioByLanguage}
             onExaggerationChange={setTtsExaggeration}
             onCfgWeightChange={setTtsCfgWeight}
             onRefAudioChange={setTtsRefAudioFile}
+            onAutoPickRefAudioByLanguageChange={setTtsAutoPickRefAudioByLanguage}
           />
         </CardContent>
       </Card>

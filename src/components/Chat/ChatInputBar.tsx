@@ -67,6 +67,8 @@ export function ChatInputBar() {
   const [expectingAudioResponse, setExpectingAudioResponse] = useState(false);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [lastToastTime, setLastToastTime] = useState(0);
+  const [isDragActive, setIsDragActive] = useState(false);
+  const dragCounterRef = useRef(0);
 
   const { toast } = useToast();
 
@@ -224,17 +226,9 @@ export function ChatInputBar() {
     event.target.style.height = `${Math.min(event.target.scrollHeight, 100)}px`;
   };
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    const file = files[0];
+  const uploadSelectedFile = async (file: File) => {
     const validation = validateFileSize(file);
     if (!validation.isValid) {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      event.target.value = "";
       setInputValue(prev => prev);
       const now = Date.now();
       if (now - lastToastTime > 1000) {
@@ -256,12 +250,62 @@ export function ChatInputBar() {
         description: "Failed to upload file. Please try again.",
         variant: "destructive",
       });
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      event.target.value = "";
     }
+  };
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const file = files[0];
+    await uploadSelectedFile(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    event.target.value = "";
+  };
+
+  const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isLoadingResponse || isRecording || isTranscribing) return;
+    dragCounterRef.current += 1;
+    setIsDragActive(true);
+  };
+
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isLoadingResponse || isRecording || isTranscribing) return;
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current <= 0) {
+      setIsDragActive(false);
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (isLoadingResponse || isRecording || isTranscribing) return;
+  };
+
+  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDragActive(false);
+    if (isLoadingResponse || isRecording || isTranscribing) return;
+
+    const files = event.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    if (files.length > 1) {
+      toast({
+        title: "Multiple files detected",
+        description: "Please drop one file at a time.",
+        variant: "destructive",
+      });
+    }
+    await uploadSelectedFile(files[0]);
   };
 
   const handleSubmit = async () => {
@@ -293,7 +337,13 @@ export function ChatInputBar() {
   const isMicDisabled = isLoadingResponse || isTranscribing;
 
   return (
-    <div className="w-full px-4 py-4 bg-white">
+    <div
+      className="w-full px-4 py-4 bg-white"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {hasMicPermission === false && (
         <Alert variant="destructive" className="mb-4 max-w-4xl mx-auto">
           <AlertTitle>Microphone Access Denied</AlertTitle>
@@ -303,8 +353,18 @@ export function ChatInputBar() {
         </Alert>
       )}
 
-      <div className="max-w-4xl mx-auto">
-        <div className="relative flex items-end gap-2 md:gap-3 p-2 md:p-3 bg-gray-100 rounded-2xl border border-gray-300 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300 hover:shadow-sm focus-within:shadow-md transition-all duration-300">
+      <div className="max-w-4xl mx-auto relative">
+        {isDragActive && (
+          <div className="pointer-events-none absolute inset-0 z-10 rounded-2xl border-2 border-dashed border-blue-400 bg-blue-50/70 flex items-center justify-center">
+            <div className="text-sm font-medium text-blue-700">Drop a file to upload</div>
+          </div>
+        )}
+        <div
+          className={cn(
+            "relative flex items-end gap-2 md:gap-3 p-2 md:p-3 bg-gray-100 rounded-2xl border border-gray-300 focus-within:border-gray-500 focus-within:ring-1 focus-within:ring-gray-300 hover:shadow-sm focus-within:shadow-md transition-all duration-300",
+            isDragActive && "border-blue-400 bg-blue-50"
+          )}
+        >
           <div className="flex-1 min-h-[44px] flex items-center">
             <Textarea
               value={inputValue}

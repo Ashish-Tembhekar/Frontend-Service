@@ -10,6 +10,7 @@ export interface Message {
   role: "user" | "assistant" | "system";
   content: string; // Can be plain text, Markdown (for user), or HTML (for assistant)
   contentType?: 'text' | 'html'; // Explicitly define content type
+  detected_language?: string; // Language code used for this assistant response (e.g. en, hi, de)
   timestamp: string; // ISO string
   isLoading?: boolean; // For assistant messages being generated
   processingStatus?: string; // For showing granular LLM processing status

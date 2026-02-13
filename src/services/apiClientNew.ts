@@ -6,6 +6,32 @@ import { appConfig } from '../lib/config';
 // Define the Kokoro service URL (fallback to 8090 if not in config)
 const KOKORO_API_URL = (appConfig as any).kokoroTtsUrl || "http://localhost:8090";
 
+export class DuplicateFileError extends Error {
+  existingDocument?: Record<string, unknown>;
+
+  constructor(message: string, existingDocument?: Record<string, unknown>) {
+    super(message);
+    this.name = "DuplicateFileError";
+    this.existingDocument = existingDocument;
+  }
+}
+
+async function readErrorMessage(response: Response): Promise<{ message: string; existingDocument?: Record<string, unknown> }> {
+  const rawText = await response.text();
+  if (!rawText) {
+    return { message: response.statusText || "Unknown error" };
+  }
+
+  try {
+    const parsed = JSON.parse(rawText);
+    const message = parsed.detail || parsed.error || rawText;
+    const existingDocument = parsed.existing_document || parsed.existingDocument;
+    return { message: typeof message === "string" ? message : rawText, existingDocument };
+  } catch {
+    return { message: rawText };
+  }
+}
+
 /**
  * Uploads a PDF file to the backend for indexing.
  */
@@ -20,9 +46,12 @@ export async function uploadPdfDocument(file: File): Promise<UploadPdfResponse> 
     });
 
     if (!response.ok) {
-      const errorBody = await response.text();
-      console.error("Error from FastAPI backend during PDF upload:", response.status, errorBody);
-      throw new Error(`PDF upload failed with status ${response.status}: ${errorBody}`);
+      const { message, existingDocument } = await readErrorMessage(response);
+      console.error("Error from FastAPI backend during PDF upload:", response.status, message);
+      if (response.status === 409) {
+        throw new DuplicateFileError(message || "File already exists in the database.", existingDocument);
+      }
+      throw new Error(`PDF upload failed with status ${response.status}: ${message}`);
     }
 
     const result: UploadPdfResponse = await response.json();

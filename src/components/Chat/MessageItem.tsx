@@ -35,6 +35,7 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
     stopChunkPlayback, // NEW: Get stop chunk playback function
     requestTTS, // NEW: Get requestTTS function for retry
     setAudioGeneratingForMessage, // NEW: Get function to set generating state
+    stopCurrentAudio, // Stop active streaming/chunk playback before message audio playback
     currentChatThreadId, // Needed to retry Azure restore for persisted audio
     restoreAudioFromCache, // Needed to retry Azure restore for persisted audio
     // FIX: Swap-transition state
@@ -45,7 +46,21 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
 
   // NEW: Handler to retry audio generation
   const handleRetryAudio = () => {
-    // If this message has persisted Azure audio, retry restoration first.
+    // If Azure fetch failed/timed out, regenerate TTS instead of retrying fetch.
+    if (message.audioRestoreFailed) {
+      if (!message.content) return;
+
+      setAudioGeneratingForMessage(message.id, true);
+
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = message.content;
+      const textContent = tempDiv.textContent || tempDiv.innerText || '';
+      const lang = (message as any).detected_language || 'en';
+      requestTTS(textContent, message.id, lang);
+      return;
+    }
+
+    // If this message has persisted Azure audio and hasn't failed yet, try fetch.
     if (message.audioBlobName && currentChatThreadId) {
       restoreAudioFromCache(message.id, currentChatThreadId);
       return;
@@ -242,6 +257,7 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
                 onRequestAudio={message.audioBlobName && currentChatThreadId
                   ? () => restoreAudioFromCache(message.id, currentChatThreadId)
                   : undefined}
+                onBeforePlay={stopCurrentAudio}
                 audioError={!!message.audioRestoreFailed}
                 isStreamingPaused={currentTtsMessageId === message.id ? ttsIsPaused : false}
                 isStreamingPlaying={currentTtsMessageId === message.id ? ttsIsPlaying : false}

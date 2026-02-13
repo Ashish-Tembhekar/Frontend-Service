@@ -21,6 +21,7 @@ interface AudioPlayerProps {
   isLoadingAudio?: boolean; // Whether audio is being fetched from Azure Blob Storage
   hasDeferredAudio?: boolean; // Message has persisted Azure audio but URL is not fetched yet
   onRequestAudio?: () => void; // Fetch audio URL lazily when user clicks play
+  onBeforePlay?: () => void; // Stop other audio systems before this player starts
   onRetry?: () => void; // NEW: Callback to retry audio generation
   onAudioLoadError?: () => void; // NEW: Callback when audio fails to load
   // FIX: Swap-transition props for seamless chunk-to-combined audio handoff
@@ -45,6 +46,7 @@ export function AudioPlayer({
   isLoadingAudio = false,
   hasDeferredAudio = false,
   onRequestAudio,
+  onBeforePlay,
   onRetry,
   onAudioLoadError,
   // FIX: Swap-transition props
@@ -68,6 +70,34 @@ export function AudioPlayer({
   const hasAutoPlayed = useRef(false);
   // Track whether user explicitly requested lazy playback (single-click fetch+play UX)
   const lazyPlayRequestedRef = useRef(false);
+  const playerIdRef = useRef(`player_${Math.random().toString(36).slice(2)}`);
+
+  const announceExclusivePlayback = useCallback(() => {
+    onBeforePlay?.();
+    window.dispatchEvent(
+      new CustomEvent('chat-audio-play', {
+        detail: { playerId: playerIdRef.current },
+      }),
+    );
+  }, [onBeforePlay]);
+
+  useEffect(() => {
+    const handleOtherPlayerStarted = (event: Event) => {
+      const customEvent = event as CustomEvent<{ playerId?: string }>;
+      const startedPlayerId = customEvent.detail?.playerId;
+      if (!startedPlayerId || startedPlayerId === playerIdRef.current) return;
+
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      }
+    };
+
+    window.addEventListener('chat-audio-play', handleOtherPlayerStarted as EventListener);
+    return () => {
+      window.removeEventListener('chat-audio-play', handleOtherPlayerStarted as EventListener);
+    };
+  }, []);
 
   // Cleanup audio URL when component unmounts or URL changes
   useEffect(() => {
@@ -153,6 +183,7 @@ export function AudioPlayer({
         // Only auto-play if streaming was NOT paused (respect user's pause state)
         if (!shouldStayPaused) {
           // Auto-play to maintain continuity (user was already listening)
+          announceExclusivePlayback();
           audioRef.current.play().then(() => {
             setIsPlaying(true);
           }).catch(err => {
@@ -166,6 +197,7 @@ export function AudioPlayer({
         // Only auto-play if we just transitioned from generating state
         // AND we haven't auto-played this audio yet
         console.log('🎵 Auto-playing newly generated audio (Kokoro)');
+        announceExclusivePlayback();
         audioRef.current.play().then(() => {
           setIsPlaying(true);
         }).catch(err => {
@@ -175,6 +207,7 @@ export function AudioPlayer({
       } else {
         if (lazyPlayRequestedRef.current) {
           lazyPlayRequestedRef.current = false;
+          announceExclusivePlayback();
           audioRef.current.play().then(() => {
             setIsPlaying(true);
           }).catch(err => {
@@ -187,7 +220,7 @@ export function AudioPlayer({
         }
       }
     }
-  }, [isStreamingPaused, swapWasPaused]);
+  }, [isStreamingPaused, swapWasPaused, announceExclusivePlayback]);
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current) {
@@ -213,20 +246,22 @@ export function AudioPlayer({
     }
 
     // Allow first-play even before metadata is ready (lazy-load flow)
+    announceExclusivePlayback();
     audioRef.current.play().then(() => {
       setIsPlaying(true);
       if (!isReady) {
         setIsReady(true);
       }
     }).catch(console.error);
-  }, [isPlaying, isReady]);
+  }, [isPlaying, isReady, announceExclusivePlayback]);
 
   const handleReplay = useCallback(() => {
     if (!audioRef.current || !isReady) return;
     audioRef.current.currentTime = 0;
+    announceExclusivePlayback();
     audioRef.current.play().catch(console.error);
     setIsPlaying(true);
-  }, [isReady]);
+  }, [isReady, announceExclusivePlayback]);
 
   const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (!audioRef.current || !isReady) return;
@@ -255,6 +290,7 @@ export function AudioPlayer({
   // Don't show error if we're currently generating (retry in progress)
   if ((error || audioError || audioLoadError) && !isGenerating) {
     const errorMessage = error || (audioError || audioLoadError ? 'Failed to load audio' : 'Unknown error');
+    const isFetchFailure = audioError || audioLoadError;
 
     return (
       <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-red-50 to-rose-50 border border-red-300 rounded-lg shadow-sm mt-2">
@@ -266,7 +302,7 @@ export function AudioPlayer({
         <div className="flex-1">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-red-700">
-              Error generating audio
+              {isFetchFailure ? 'Audio failed to be fetched' : 'Error generating audio'}
             </span>
           </div>
           <div className="text-xs text-red-600 mt-0.5">
@@ -279,10 +315,10 @@ export function AudioPlayer({
           <button
             onClick={onRetry}
             className="px-3 py-1.5 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-md hover:bg-red-50 transition-colors shadow-sm flex items-center gap-1.5"
-            aria-label="Retry audio generation"
+            aria-label={isFetchFailure ? 'Regenerate audio' : 'Retry audio generation'}
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            Retry
+            {isFetchFailure ? 'Regenerate audio' : 'Retry'}
           </button>
         )}
       </div>

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { Message, ChatThread } from '../types/chat';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion, generateKokoroAudio } from '../services/apiClientNew';
+import { uploadPdfDocument as uploadPdf, askQuestionAPI as askQuestion, generateKokoroAudio, DuplicateFileError } from '../services/apiClientNew';
 import { useToast } from '../hooks/use-toast';
 import { validateFileSize } from '../lib/utils';
 import { useStreamingAudio } from '../hooks/useStreamingAudio';
@@ -53,6 +53,8 @@ interface ChatContextType {
     setTtsCfgWeight: (value: number) => void;
     ttsRefAudioFile: string | null;
     setTtsRefAudioFile: (filename: string | null) => void;
+    ttsAutoPickRefAudioByLanguage: boolean;
+    setTtsAutoPickRefAudioByLanguage: (enabled: boolean) => void;
 
     // Kokoro Params
     kokoroVoice: string;
@@ -276,6 +278,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                         role: data.role,
                         content: data.content,
                         contentType: data.contentType,
+                        detected_language: data.detected_language,
                         timestamp: timestampToISO(data.timestamp),
                         // audioUrl is NOT persisted to Firestore (local blob: URLs are useless).
                         // It will be restored on-demand from Azure via audioBlobName + SAS URL.
@@ -399,6 +402,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [ttsExaggeration, setTtsExaggeration] = useLocalStorage('nexus_tts_exaggeration_v1', 0.5);
     const [ttsCfgWeight, setTtsCfgWeight] = useLocalStorage('nexus_tts_cfg_weight_v1', 0.5);
     const [ttsRefAudioFile, setTtsRefAudioFile] = useLocalStorage<string | null>('nexus_tts_ref_audio_file_v1', null);
+    const [ttsAutoPickRefAudioByLanguage, setTtsAutoPickRefAudioByLanguage] = useLocalStorage<boolean>('nexus_tts_auto_pick_ref_audio_by_language_v1', true);
 
     // Kokoro Params
     const [kokoroVoice, setKokoroVoice] = useLocalStorage('nexus_kokoro_voice_v1', 'af_heart');
@@ -673,9 +677,21 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         } catch (error) {
             const errorMessageContent = error instanceof Error ? error.message : 'An unknown error occurred.';
+            const isDuplicate = error instanceof DuplicateFileError;
+
+            if (isDuplicate) {
+                toast({
+                    title: "File already exists",
+                    description: errorMessageContent || `${file.name} is already in the database.`,
+                    variant: "destructive",
+                });
+            }
+
             const errorMessage: Message = {
                 ...systemMessage,
-                content: `Error indexing ${file.name}: ${errorMessageContent}`,
+                content: isDuplicate
+                    ? `Upload skipped: ${file.name} already exists in the database.`
+                    : `Error indexing ${file.name}: ${errorMessageContent}`,
             };
             setMessages(prev => {
                 const finalMessages = prev.map(m => m.id === systemMessageId ? errorMessage : m);
@@ -721,7 +737,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             streamingAudio.requestTTS(text, messageId, lang, {
                 exaggeration: ttsExaggeration,
                 cfg_weight: ttsCfgWeight,
-                reference_audio_file: ttsRefAudioFile
+                reference_audio_file: ttsAutoPickRefAudioByLanguage ? null : ttsRefAudioFile,
+                auto_pick_reference_audio: ttsAutoPickRefAudioByLanguage
             }, ttsProvider, skipPersistence); // Pass ttsProvider and skipPersistence
 
         } catch (error) {
@@ -833,6 +850,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 ...assistantPlaceholderMessage,
                 content: response.answer,
                 contentType: 'html',
+                detected_language: response.detected_language || 'en',
                 isLoading: false,
                 timestamp: new Date().toISOString(),
                 audioData: null,
@@ -1180,6 +1198,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setTtsCfgWeight,
             ttsRefAudioFile,
             setTtsRefAudioFile,
+            ttsAutoPickRefAudioByLanguage,
+            setTtsAutoPickRefAudioByLanguage,
 
             // Kokoro
             kokoroVoice,

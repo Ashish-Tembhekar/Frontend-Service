@@ -8,6 +8,7 @@
 import { appConfig } from '../lib/config';
 
 const API_BASE = appConfig.fastApiBaseUrl;
+const AUDIO_FETCH_TIMEOUT_MS = 20000;
 
 // In-memory SAS URL cache for the current browser session
 // Avoids re-fetching SAS URLs for messages already played in this session
@@ -94,8 +95,11 @@ export async function getAudioSasUrl(
       `&session_id=${encodeURIComponent(sessionId)}`;
 
     console.log(`🔍 [audioStorage.getAudioSasUrl] FETCHING — url=${url}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), AUDIO_FETCH_TIMEOUT_MS);
     const fetchStart = performance.now();
-    const response = await fetch(url, { method: 'GET' });
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    clearTimeout(timeoutId);
     const fetchDuration = (performance.now() - fetchStart).toFixed(0);
     console.log(`🔍 [audioStorage.getAudioSasUrl] RESPONSE — status=${response.status}, duration=${fetchDuration}ms`);
 
@@ -122,6 +126,10 @@ export async function getAudioSasUrl(
     console.log(`🔍 [audioStorage.getAudioSasUrl] SUCCESS — cached SAS URL for messageId=${messageId}, url=${sasUrl.substring(0, 80)}...`);
     return sasUrl;
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      console.error(`🔍 [audioStorage.getAudioSasUrl] TIMEOUT — exceeded ${AUDIO_FETCH_TIMEOUT_MS}ms for messageId=${messageId}`);
+      return null;
+    }
     console.error(`🔍 [audioStorage.getAudioSasUrl] EXCEPTION — messageId=${messageId}:`, error);
     return null;
   }

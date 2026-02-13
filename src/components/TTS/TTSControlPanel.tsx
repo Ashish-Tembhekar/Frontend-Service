@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { appConfig } from '@/lib/config';
@@ -18,9 +19,11 @@ interface TTSControlPanelProps {
   exaggeration: number;
   cfgWeight: number;
   selectedRefAudio: string | null;
+  autoPickRefAudioByLanguage: boolean;
   onExaggerationChange: (value: number) => void;
   onCfgWeightChange: (value: number) => void;
   onRefAudioChange: (filename: string | null) => void;
+  onAutoPickRefAudioByLanguageChange: (enabled: boolean) => void;
 }
 
 // Hardcoded list of high-quality Kokoro voices from VOICES.txt
@@ -71,9 +74,11 @@ export function TTSControlPanel({
   exaggeration,
   cfgWeight,
   selectedRefAudio,
+  autoPickRefAudioByLanguage,
   onExaggerationChange,
   onCfgWeightChange,
   onRefAudioChange,
+  onAutoPickRefAudioByLanguageChange,
 }: TTSControlPanelProps) {
   const {
     ttsProvider,
@@ -232,6 +237,17 @@ export function TTSControlPanel({
 
             {/* Reference Audio File Selection */}
             <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-md border border-blue-200 bg-blue-50 px-3 py-2">
+                <div>
+                  <label className="text-sm font-medium text-gray-800">Auto-pick reference audio by language</label>
+                  <p className="text-xs text-gray-600">Uses `defaults.json` mapping for each generated TTS message</p>
+                </div>
+                <Switch
+                  checked={autoPickRefAudioByLanguage}
+                  onCheckedChange={onAutoPickRefAudioByLanguageChange}
+                />
+              </div>
+
               <div className="flex items-center gap-2">
                 <Volume2 className="h-4 w-4 text-gray-600" />
                 <label className="text-sm font-medium text-gray-700">Reference Audio (Cloning)</label>
@@ -239,9 +255,9 @@ export function TTSControlPanel({
               <Select
                 value={selectedRefAudio || 'none'}
                 onValueChange={(value) => handleRefAudioChange(value === 'none' ? null : value)}
-                disabled={isLoadingFiles || isCachingAudio}
+                disabled={isLoadingFiles || isCachingAudio || autoPickRefAudioByLanguage}
               >
-                <SelectTrigger className="w-full bg-white border-gray-300">
+                <SelectTrigger className={`w-full border-gray-300 ${autoPickRefAudioByLanguage ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : 'bg-white'}`}>
                   <SelectValue placeholder={isLoadingFiles ? 'Loading files...' : 'Select reference audio'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -251,7 +267,11 @@ export function TTSControlPanel({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500">Select a reference file to clone voice characteristics</p>
+              <p className="text-xs text-gray-500">
+                {autoPickRefAudioByLanguage
+                  ? 'Manual picker disabled while auto-pick is enabled.'
+                  : 'Select a reference file to clone voice characteristics'}
+              </p>
             </div>
           </TabsContent>
 

@@ -41,6 +41,7 @@ interface TTSParameters {
   exaggeration?: number;
   cfg_weight?: number;
   reference_audio_file?: string | null;
+  auto_pick_reference_audio?: boolean;
 }
 
 // Callback type for when audio merging is complete (fires IMMEDIATELY after merge)
@@ -761,7 +762,8 @@ export function useStreamingAudio(
         language,
         exaggeration: ttsParams?.exaggeration ?? 0.5,
         cfg_weight: ttsParams?.cfg_weight ?? 0.5,
-        reference_audio_file: ttsParams?.reference_audio_file ?? null
+        reference_audio_file: ttsParams?.reference_audio_file ?? null,
+        auto_pick_reference_audio: ttsParams?.auto_pick_reference_audio ?? true
       };
     }
 
