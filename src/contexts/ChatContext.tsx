@@ -26,7 +26,7 @@ import {
     Timestamp,
     updateDoc
 } from 'firebase/firestore';
-import { getAudioSasUrl } from '../services/audioStorage';
+import { getAudioSasUrl, deleteSessionAudio } from '../services/audioStorage';
 import { useSSEContext } from './SSEContext';
 import { appConfig } from '../lib/config';
 
@@ -1092,6 +1092,15 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!user?.uid) return;
 
         try {
+            const audioDeleted = await deleteSessionAudio(threadId, user.uid);
+            if (!audioDeleted) {
+                toast({
+                    title: "Warning",
+                    description: "Chat deleted, but audio cleanup failed. Please try again.",
+                    variant: "destructive",
+                });
+            }
+
             // If thread is pending (local-only, never persisted), just remove locally
             if (pendingThreadIdsRef.current.has(threadId)) {
                 pendingThreadIdsRef.current.delete(threadId);
@@ -1133,12 +1142,30 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (!user?.uid) return;
 
         try {
-            // Clear any pending (local-only) threads first
-            pendingThreadIdsRef.current.clear();
+            // Capture pending (local-only) threads before clearing
+            const pendingThreadIds = Array.from(pendingThreadIdsRef.current);
 
             // Get all thread documents and delete them from Firestore
             const threadsRef = collection(db, 'users', user.uid, 'threads');
             const snapshot = await getDocs(threadsRef);
+
+            const threadIds = new Set<string>([
+                ...pendingThreadIds,
+                ...snapshot.docs.map(doc => doc.id),
+            ]);
+
+            if (threadIds.size > 0) {
+                const deleteResults = await Promise.all(
+                    Array.from(threadIds).map(threadId => deleteSessionAudio(threadId, user.uid))
+                );
+                if (deleteResults.some(result => !result)) {
+                    toast({
+                        title: "Warning",
+                        description: "Chat history cleared, but some audio files could not be deleted. Please try again.",
+                        variant: "destructive",
+                    });
+                }
+            }
 
             const batch = writeBatch(db);
             snapshot.docs.forEach(doc => {
@@ -1147,6 +1174,9 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             await batch.commit();
 
             console.log(`🔥 Deleted ${snapshot.docs.length} threads from Firestore`);
+
+            // Clear pending (local-only) threads only after successful deletion
+            pendingThreadIdsRef.current.clear();
 
             // Reset local state and create a fresh new chat (will be local-only until first message)
             setChatThreads([]);

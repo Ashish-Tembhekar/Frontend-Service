@@ -167,6 +167,41 @@ export async function deleteAudio(
 }
 
 /**
+ * Delete all audio blobs for a chat session (thread) from Azure via the backend.
+ *
+ * Returns true if deletion succeeded or nothing was found, false on error.
+ */
+export async function deleteSessionAudio(
+  sessionId: string,
+  userId?: string,
+): Promise<boolean> {
+  if (!userId) return false;
+
+  try {
+    const url =
+      `${API_BASE}/api/v1/audio/session/${encodeURIComponent(sessionId)}` +
+      `?user_id=${encodeURIComponent(userId)}`;
+
+    const response = await fetch(url, { method: 'DELETE' });
+
+    if (response.status === 404) {
+      console.log(`☁️  No audio blobs found for session: ${sessionId}`);
+      return true;
+    }
+
+    if (!response.ok) {
+      throw new Error(`Delete session audio failed: ${response.status} ${response.statusText}`);
+    }
+
+    console.log(`☁️  Session audio deleted from Azure: ${sessionId}`);
+    return true;
+  } catch (error) {
+    console.error('☁️  Failed to delete session audio from Azure:', error);
+    return false;
+  }
+}
+
+/**
  * Clear the in-memory SAS URL cache (e.g. on sign-out).
  */
 export function clearAllAudio(): void {
