@@ -1,5 +1,55 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+const USER_ID_STORAGE_KEY = 'chatbot_user_id';
+const SESSION_ID_STORAGE_KEY = 'chatbot_session_id';
+
+let cachedUserId: string | null = null;
+let cachedSessionId: string | null = null;
+
+const getOrCreateUserId = (): string => {
+  if (cachedUserId) {
+    return cachedUserId;
+  }
+
+  if (typeof window !== 'undefined') {
+    const existingUserId = localStorage.getItem(USER_ID_STORAGE_KEY);
+    if (existingUserId) {
+      cachedUserId = existingUserId;
+      return existingUserId;
+    }
+  }
+
+  const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(USER_ID_STORAGE_KEY, newUserId);
+  }
+
+  cachedUserId = newUserId;
+  return newUserId;
+};
+
+const getOrCreateSessionId = (): string => {
+  if (cachedSessionId) {
+    return cachedSessionId;
+  }
+
+  if (typeof window !== 'undefined') {
+    const existingSessionId = sessionStorage.getItem(SESSION_ID_STORAGE_KEY);
+    if (existingSessionId) {
+      cachedSessionId = existingSessionId;
+      return existingSessionId;
+    }
+  }
+
+  const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  if (typeof window !== 'undefined') {
+    sessionStorage.setItem(SESSION_ID_STORAGE_KEY, newSessionId);
+  }
+
+  cachedSessionId = newSessionId;
+  return newSessionId;
+};
+
 interface WebSocketMessage {
   type: 'status_update' | 'processing_event' | 'file_deleted' | 'job_status_update' | 'pdf_processing_complete' | 'pdf_processing_failed' | 'heartbeat' | 'pong' | 'user_connected' | 'user_disconnected' | 'llm_status_update';
   file_uuid?: string;
@@ -36,42 +86,20 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
   // Persistent user_id across pages/refreshes, stored in localStorage
   const [userId] = useState(() => {
+    const id = getOrCreateUserId();
     if (typeof window !== 'undefined') {
-      const existingUserId = localStorage.getItem('chatbot_user_id');
-      if (existingUserId) {
-        console.log('👤 Loaded existing user ID from localStorage:', existingUserId.slice(-8));
-        return existingUserId;
-      }
+      console.log('?? Loaded user ID:', id.slice(-8));
     }
-
-    const newUserId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('chatbot_user_id', newUserId);
-      console.log('👤 Created new user ID and saved to localStorage:', newUserId.slice(-8));
-    }
-
-    return newUserId;
+    return id;
   });
 
   // Session ID persisted in sessionStorage (survives refresh, clears on tab close)
   const [sessionId] = useState(() => {
+    const id = getOrCreateSessionId();
     if (typeof window !== 'undefined') {
-      const existingSessionId = sessionStorage.getItem('chatbot_session_id');
-      if (existingSessionId) {
-        console.log('📋 [WEBSOCKET] Loaded existing session ID from sessionStorage:', existingSessionId.slice(-8));
-        return existingSessionId;
-      }
+      console.log('?? [WEBSOCKET] Loaded session ID:', id.slice(-8));
     }
-
-    const newSessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('chatbot_session_id', newSessionId);
-      console.log('📋 [WEBSOCKET] Created new session ID and saved to sessionStorage:', newSessionId.slice(-8));
-    }
-
-    return newSessionId;
+    return id;
   });
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -311,9 +339,11 @@ export function useWebSocket(url: string): UseWebSocketReturn {
 
   const clearUserSession = useCallback(() => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('chatbot_user_id');
-      sessionStorage.removeItem('chatbot_session_id');
-      console.log('🗑️ User session cleared from localStorage and sessionStorage');
+      localStorage.removeItem(USER_ID_STORAGE_KEY);
+      sessionStorage.removeItem(SESSION_ID_STORAGE_KEY);
+      cachedUserId = null;
+      cachedSessionId = null;
+      console.log('??? User session cleared from localStorage and sessionStorage');
     }
   }, []);
 
