@@ -235,10 +235,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 });
                 setIsFirestoreLoading(false);
 
-                // Auto-select the most recent thread if none is selected
-                if (!currentChatThreadId && threads.length > 0) {
-                    setCurrentChatThreadId(threads[0].id);
-                }
+                // Always start with a fresh chat session on app load.
+                // Previous sessions are accessible via the history panel.
             },
             (error) => {
                 console.error('Error listening to threads:', error);
@@ -613,13 +611,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
     }, []);
 
+    // History panel is always initially hidden/collapsed.
+    // Users can toggle it open via the header button.
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const storedState = window.localStorage.getItem('nexus_history_panel_open_v2');
-            if (storedState === null) {
-                setIsHistoryPanelOpen(window.innerWidth >= 768);
-            }
-        }
+        setIsHistoryPanelOpen(false);
     }, []);
 
     // Note: Effect for handling initial thread creation is placed after startNewChat definition
@@ -973,23 +968,32 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
     }, [user?.uid, chatThreads, messages.length, currentChatThreadId, isHistoryPanelOpen, setIsHistoryPanelOpen, streamingAudio]);
 
-    // Handle initial thread creation when Firestore loads with no threads
+    // Handle initial thread creation on app load and thread deletion recovery.
+    // Always starts a fresh "New Chat" session when the app loads, regardless of existing threads.
+    const hasCreatedInitialThread = useRef(false);
     useEffect(() => {
         if (!isFirestoreLoading && !user?.uid) return;
 
-        // If Firestore loaded and there are no threads, and user is logged in, create one
-        if (!isFirestoreLoading && chatThreads.length === 0 && user?.uid && !currentChatThreadId) {
+        // On initial load (Firestore done loading, user is logged in), always start a new chat.
+        // This ensures the user sees a fresh session instead of their last conversation.
+        if (!isFirestoreLoading && user?.uid && !hasCreatedInitialThread.current) {
+            hasCreatedInitialThread.current = true;
             startNewChat();
+            return;
         }
 
-        // If current thread was deleted, switch to the most recent
-        if (!isFirestoreLoading && chatThreads.length > 0 && currentChatThreadId) {
+        // If current thread was deleted, switch to the most recent or create a new one
+        if (!isFirestoreLoading && currentChatThreadId && hasCreatedInitialThread.current) {
             const threadStillExists = chatThreads.some(t => t.id === currentChatThreadId);
             if (!threadStillExists) {
-                const mostRecentThread = [...chatThreads].sort((a, b) =>
-                    new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
-                )[0];
-                setCurrentChatThreadId(mostRecentThread.id);
+                if (chatThreads.length > 0) {
+                    const mostRecentThread = [...chatThreads].sort((a, b) =>
+                        new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
+                    )[0];
+                    setCurrentChatThreadId(mostRecentThread.id);
+                } else {
+                    startNewChat();
+                }
             }
         }
     }, [isFirestoreLoading, chatThreads, currentChatThreadId, user?.uid, startNewChat]);

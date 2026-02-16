@@ -732,9 +732,8 @@ export function DashboardView() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
         aria-label="Upload a file by dragging and dropping"
-        className={`flex items-center justify-center border-2 border-dashed rounded-lg px-6 py-8 text-center transition-colors duration-200 ${
-          isDragActive ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
-        } ${isUploading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+        className={`flex items-center justify-center border-2 border-dashed rounded-lg px-6 py-8 text-center transition-colors duration-200 ${isDragActive ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+          } ${isUploading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
       >
         <div>
           <div className="flex items-center justify-center gap-2 text-sm font-medium">
@@ -890,18 +889,14 @@ export function DashboardView() {
                               <span className="text-muted-foreground">Chunks:</span>
                               <span className="ml-1">{file.chunks_created}</span>
                             </div>
-                            {file.file_name.toLowerCase().endsWith('.pdf') && (
-                              <div>
-                                <span className="text-muted-foreground">Pages:</span>
-                                <span className="ml-1">{file.total_pages}</span>
-                              </div>
-                            )}
-                            {!file.file_name.toLowerCase().endsWith('.pdf') && (
-                              <div>
-                                <span className="text-muted-foreground">Type:</span>
-                                <span className="ml-1">{file.file_name.split('.').pop()?.toUpperCase()}</span>
-                              </div>
-                            )}
+                            <div>
+                              <span className="text-muted-foreground">Type:</span>
+                              <span className="ml-1">{file.file_name.split('.').pop()?.toUpperCase()}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Pages:</span>
+                              <span className="ml-1">{file.total_pages}</span>
+                            </div>
                             <div>
                               <span className="text-muted-foreground">Uploaded:</span>
                               <span className="ml-1">
