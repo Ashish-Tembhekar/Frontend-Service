@@ -10,7 +10,7 @@ interface MessageListProps {
 }
 
 export function MessageList({ messages }: MessageListProps) {
-  const { activeChatThread } = useChat();
+  const { activeChatThread, isVoiceInputProcessing } = useChat();
 
   if (messages.length === 0 && activeChatThread) {
     // Case for empty chat with an active thread: Display greeting
@@ -38,14 +38,28 @@ export function MessageList({ messages }: MessageListProps) {
   // pt-4 provides some top padding for the first message.
 
   // Find the index of the last assistant message
-  const lastAssistantMessageIndex = messages.map((msg, idx) => ({ msg, idx }))
+  const displayMessages = isVoiceInputProcessing
+    ? [
+      ...messages,
+      {
+        id: 'msg_user_voice_processing',
+        role: 'user' as const,
+        content: '',
+        timestamp: new Date().toISOString(),
+        isLoading: true,
+        processingStatus: 'Processing voice input...'
+      }
+    ]
+    : messages;
+
+  const lastAssistantMessageIndex = displayMessages.map((msg, idx) => ({ msg, idx }))
     .reverse()
     .find(({ msg }) => msg.role === 'assistant')?.idx ?? -1;
 
   return (
     <div className="w-full max-w-2xl sm:max-w-3xl md:max-w-4xl mx-auto px-4 pt-4 pb-20">
       <div className="space-y-2">
-        {messages.map((msg, idx) => (
+        {displayMessages.map((msg, idx) => (
           <MessageItem
             key={msg.id}
             message={msg}

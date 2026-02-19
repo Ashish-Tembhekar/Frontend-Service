@@ -28,6 +28,8 @@ export function ChatInputBar() {
     addProcessedMessages,
     uploadFile,
     isLoadingResponse,
+    setVoiceInputProcessing,
+    isBackendDeletionProcessing,
     messages,
     stopCurrentAudio,
     isAudioResponseEnabled,
@@ -90,7 +92,7 @@ export function ChatInputBar() {
   }, []);
 
   const handleMicClick = async () => {
-    if (isLoadingResponse || isTranscribing) return;
+    if (isLoadingResponse || isTranscribing || isBackendDeletionProcessing) return;
 
     if (isAudioPlaying) {
       stopCurrentAudio();
@@ -133,7 +135,7 @@ export function ChatInputBar() {
       stream.getTracks().forEach(track => track.stop());
 
       setIsTranscribing(true);
-      setInputValue("Processing voice message...");
+      setVoiceInputProcessing(true);
 
       try {
         const currentMessages = messages.filter(m => m.role !== 'system').slice(-10);
@@ -161,8 +163,6 @@ export function ChatInputBar() {
         }
 
         if (response.original_text && response.original_text.trim()) {
-          setInputValue(response.original_text);
-
           const userMessage = {
             id: `msg_user_${Date.now()}`,
             role: 'user' as const,
@@ -186,10 +186,6 @@ export function ChatInputBar() {
 
           addProcessedMessages(userMessage, assistantMessage);
 
-          setTimeout(() => {
-            setInputValue('');
-          }, 1000);
-
         } else {
           toast({
             title: "No speech detected",
@@ -205,6 +201,7 @@ export function ChatInputBar() {
         });
       } finally {
         setIsTranscribing(false);
+        setVoiceInputProcessing(false);
         mediaRecorderRef.current = null;
       }
     };
@@ -268,7 +265,7 @@ export function ChatInputBar() {
   const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    if (isLoadingResponse || isRecording || isTranscribing) return;
+    if (isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing) return;
     dragCounterRef.current += 1;
     setIsDragActive(true);
   };
@@ -276,7 +273,7 @@ export function ChatInputBar() {
   const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    if (isLoadingResponse || isRecording || isTranscribing) return;
+    if (isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing) return;
     dragCounterRef.current -= 1;
     if (dragCounterRef.current <= 0) {
       setIsDragActive(false);
@@ -286,7 +283,7 @@ export function ChatInputBar() {
   const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-    if (isLoadingResponse || isRecording || isTranscribing) return;
+    if (isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing) return;
   };
 
   const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
@@ -294,7 +291,7 @@ export function ChatInputBar() {
     event.stopPropagation();
     dragCounterRef.current = 0;
     setIsDragActive(false);
-    if (isLoadingResponse || isRecording || isTranscribing) return;
+    if (isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing) return;
 
     const files = event.dataTransfer.files;
     if (!files || files.length === 0) return;
@@ -309,7 +306,7 @@ export function ChatInputBar() {
   };
 
   const handleSubmit = async () => {
-    if (isLoadingResponse || !inputValue.trim()) return;
+    if (isLoadingResponse || isBackendDeletionProcessing || !inputValue.trim()) return;
 
     if (isRecording) {
       stopRecording();
@@ -334,7 +331,7 @@ export function ChatInputBar() {
     }
   };
 
-  const isMicDisabled = isLoadingResponse || isTranscribing;
+  const isMicDisabled = isLoadingResponse || isTranscribing || isBackendDeletionProcessing;
 
   return (
     <div
@@ -370,10 +367,10 @@ export function ChatInputBar() {
               value={inputValue}
               onChange={handleInputChange}
               onKeyPress={handleKeyPress}
-              placeholder={isRecording ? "Recording..." : (isTranscribing ? "Transcribing..." : "Message AI Assistant...")}
+              placeholder={isBackendDeletionProcessing ? "Backend is syncing after deletion..." : (isRecording ? "Recording..." : (isTranscribing ? "Transcribing..." : "Message AI Assistant..."))}
               className="flex-1 resize-none border-none bg-transparent focus:ring-0 text-gray-900 placeholder:text-gray-500 text-base leading-6"
               rows={1}
-              disabled={isLoadingResponse || isRecording || isTranscribing}
+              disabled={isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing}
             />
           </div>
 
@@ -382,7 +379,7 @@ export function ChatInputBar() {
               variant="ghost"
               size="icon"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isLoadingResponse || isRecording || isTranscribing}
+              disabled={isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing}
               className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
               aria-label="Upload file"
             >
@@ -458,7 +455,7 @@ export function ChatInputBar() {
                   <TooltipTrigger asChild>
                     <Button
                       onClick={() => setIsSelectionDialogOpen(true)}
-                      disabled={isLoadingResponse || isRecording || isTranscribing}
+                      disabled={isLoadingResponse || isRecording || isTranscribing || isBackendDeletionProcessing}
                       size="icon"
                       className="h-9 w-9 rounded-full bg-gray-600 text-white hover:bg-white hover:text-gray-600 transition-all duration-200"
                       aria-label="Start voice chat"
@@ -475,7 +472,7 @@ export function ChatInputBar() {
 
             <Button
               onClick={handleSubmit}
-              disabled={isLoadingResponse || !inputValue.trim() || isRecording || isTranscribing}
+              disabled={isLoadingResponse || isBackendDeletionProcessing || !inputValue.trim() || isRecording || isTranscribing}
               size="icon"
               className="h-9 w-9 rounded-full bg-gray-500 text-white hover:bg-white hover:text-gray-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow-md"
               aria-label="Send message"

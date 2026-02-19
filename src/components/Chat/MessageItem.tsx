@@ -123,6 +123,25 @@ export function MessageItem({ message, isLastAssistantMessage = false }: Message
     );
   }
 
+  if (isUser && message.isLoading) {
+    return (
+      <div className="flex justify-end py-6">
+        <div className="flex items-center gap-3 px-4 py-3 bg-gray-700 text-white rounded-2xl shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="flex space-x-1">
+              <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+              <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+              <div className="w-2 h-2 bg-white/80 rounded-full animate-bounce"></div>
+            </div>
+            <span className="text-sm font-medium">
+              {message.processingStatus || 'Processing voice input...'}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex gap-4 py-6 ${isUser ? 'justify-end' : 'justify-start'} animate-in fade-in-0 slide-in-from-bottom-2 duration-500`}>
       {!isUser && (

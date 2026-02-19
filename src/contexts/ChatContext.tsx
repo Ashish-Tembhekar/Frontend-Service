@@ -36,6 +36,8 @@ interface ChatContextType {
     activeChatThread: ChatThread | null;
     messages: Message[];
     isLoadingResponse: boolean;
+    isVoiceInputProcessing: boolean;
+    isBackendDeletionProcessing: boolean;
     isHistoryPanelOpen: boolean;
 
     // Audio settings
@@ -105,6 +107,7 @@ interface ChatContextType {
     requestTTS: (text: string, messageId: string, language?: string, skipPersistence?: boolean) => void;
     setAudioForMessage: (messageId: string, audioUrl: string) => void;
     setAudioGeneratingForMessage: (messageId: string, isGenerating: boolean) => void;
+    setVoiceInputProcessing: (isProcessing: boolean) => void;
     restoreAudioFromCache: (messageId: string, threadId: string) => Promise<void>;
     connectChatterboxTTS: () => void;
     disconnectChatterboxTTS: () => void;
@@ -139,6 +142,30 @@ const timestampToISO = (timestamp: Timestamp | Date | string | undefined | null)
     }
     // Final fallback
     return new Date().toISOString();
+};
+
+const toTimestampMs = (timestamp: string | undefined | null, fallbackMs: number): number => {
+    if (!timestamp) return fallbackMs;
+    const parsed = Date.parse(timestamp);
+    return Number.isFinite(parsed) ? parsed : fallbackMs;
+};
+
+const normalizeMessagePairTimestamps = (userMessage: Message, assistantMessage: Message) => {
+    const baseMs = Date.now();
+    const userMs = toTimestampMs(userMessage.timestamp, baseMs);
+    const assistantCandidateMs = toTimestampMs(assistantMessage.timestamp, userMs + 1);
+    const assistantMs = assistantCandidateMs <= userMs ? userMs + 1 : assistantCandidateMs;
+
+    return {
+        userMessage: {
+            ...userMessage,
+            timestamp: new Date(userMs).toISOString(),
+        },
+        assistantMessage: {
+            ...assistantMessage,
+            timestamp: new Date(assistantMs).toISOString(),
+        },
+    };
 };
 
 // Helper function to sanitize objects for Firestore (replace undefined with null, remove functions)
@@ -180,6 +207,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [activeChatThread, setActiveChatThread] = useState<ChatThread | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [isLoadingResponse, setIsLoadingResponse] = useState(false);
+    const [isVoiceInputProcessing, setIsVoiceInputProcessing] = useState(false);
+    const [isBackendDeletionProcessing, setIsBackendDeletionProcessing] = useState(false);
     // Ref to track in-flight (optimistic) message IDs that haven't been persisted to Firestore yet.
     // This prevents the onSnapshot listener from wiping them when it fires with stale data.
     const pendingMessageIdsRef = useRef<Set<string>>(new Set());
@@ -450,7 +479,20 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const [isAudioResponseEnabled, setIsAudioResponseEnabled] = useLocalStorage('nexus_audio_response_enabled_v1', true);
 
     // Use shared SSE for status updates (including LLM processing status)
-    const { lastEvent: sseLastEvent } = useSSEContext();
+    const {
+        lastEvent: sseLastEvent,
+        isConnected: sseIsConnected,
+        connectionStatus: sseConnectionStatus,
+        reconnect: reconnectSSE,
+    } = useSSEContext();
+
+    const sseConnectedRef = useRef<boolean>(sseIsConnected);
+    const sseStatusRef = useRef<'connecting' | 'connected' | 'disconnected' | 'reconnecting'>(sseConnectionStatus);
+
+    useEffect(() => {
+        sseConnectedRef.current = sseIsConnected;
+        sseStatusRef.current = sseConnectionStatus;
+    }, [sseIsConnected, sseConnectionStatus]);
 
     // Role config
     const [chatbotRole, setChatbotRole] = useLocalStorage('nexus_chatbot_role_v1', 'Helpful Document Assistant');
@@ -611,6 +653,59 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         });
     }, []);
 
+    const sleep = useCallback((ms: number) => new Promise(resolve => setTimeout(resolve, ms)), []);
+
+    const checkBackendReadyForConversation = useCallback(async (): Promise<boolean> => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        try {
+            const response = await fetch(`${appConfig.fastApiBaseUrl}/system-status/`, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                signal: controller.signal,
+                cache: 'no-store',
+            });
+            if (!response.ok) return false;
+
+            const data = await response.json();
+            const queueAvailable = data?.question_queue?.queue_available !== false;
+            const systemHealth = data?.system_health;
+            const healthAcceptable = systemHealth === 'healthy' || systemHealth === 'warning' || !systemHealth;
+            return queueAvailable && healthAcceptable;
+        } catch {
+            return false;
+        } finally {
+            clearTimeout(timeout);
+        }
+    }, []);
+
+    const waitForBackendAndConnectionAfterDeletion = useCallback(async (): Promise<boolean> => {
+        const maxAttempts = 30;
+        let stableReadyChecks = 0;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const backendReady = await checkBackendReadyForConversation();
+            const sseConnected = sseConnectedRef.current || sseStatusRef.current === 'connected';
+
+            if (!sseConnected && sseStatusRef.current === 'disconnected') {
+                reconnectSSE();
+            }
+
+            if (backendReady && sseConnected) {
+                stableReadyChecks += 1;
+                if (stableReadyChecks >= 2) {
+                    return true;
+                }
+            } else {
+                stableReadyChecks = 0;
+            }
+
+            await sleep(1000);
+        }
+
+        return false;
+    }, [checkBackendReadyForConversation, reconnectSSE, sleep]);
+
     // History panel is always initially hidden/collapsed.
     // Users can toggle it open via the header button.
     useEffect(() => {
@@ -751,32 +846,35 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const addProcessedMessages = (userMessage: Message, assistantMessage: Message, skipTTS: boolean = false) => {
         if (!currentChatThreadId) return;
 
+        const { userMessage: normalizedUserMessage, assistantMessage: normalizedAssistantMessage } =
+            normalizeMessagePairTimestamps(userMessage, assistantMessage);
+
         const isNewThread = activeChatThread?.messages.length === 0 && activeChatThread.title === "New Chat";
-        const newTitle = isNewThread ? (userMessage.content.substring(0, 30) + (userMessage.content.length > 30 ? '...' : '')) : undefined;
+        const newTitle = isNewThread ? (normalizedUserMessage.content.substring(0, 30) + (normalizedUserMessage.content.length > 30 ? '...' : '')) : undefined;
 
         const assistantMessageForState = {
-            ...assistantMessage,
+            ...normalizedAssistantMessage,
             audioData: null,
             isAudioGenerating: isAudioResponseEnabled && !skipTTS // Do not show generating state if skipping TTS
         };
 
         // Mark as pending so onSnapshot doesn't wipe them before Firestore persistence
-        pendingMessageIdsRef.current.add(userMessage.id);
+        pendingMessageIdsRef.current.add(normalizedUserMessage.id);
         pendingMessageIdsRef.current.add(assistantMessageForState.id);
 
         setMessages(prevMessages => {
-            const updatedMessages = [...prevMessages, userMessage, assistantMessageForState];
+            const updatedMessages = [...prevMessages, normalizedUserMessage, assistantMessageForState];
             updateMessagesInCurrentThread(updatedMessages, newTitle);
             return updatedMessages;
         });
 
         if (isAudioResponseEnabled && !skipTTS) {
             const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = assistantMessage.content;
+            tempDiv.innerHTML = normalizedAssistantMessage.content;
             const textContent = tempDiv.textContent || tempDiv.innerText || '';
-            const lang = (assistantMessage as any).detected_language || 'en';
+            const lang = (normalizedAssistantMessage as any).detected_language || 'en';
 
-            handleTTSGeneration(textContent, assistantMessage.id, lang);
+            handleTTSGeneration(textContent, normalizedAssistantMessage.id, lang);
         }
     };
 
@@ -787,20 +885,21 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         stopCurrentAudio();
 
         const displayText = originalText || userInput;
+        const baseTimestampMs = Date.now();
 
         const userMessage: Message = {
-            id: `msg_user_${Date.now()}`,
+            id: `msg_user_${baseTimestampMs}`,
             role: 'user',
             content: displayText,
             contentType: 'text',
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(baseTimestampMs).toISOString(),
         };
 
         const assistantPlaceholderMessage: Message = {
-            id: `msg_assistant_${Date.now() + 1}`,
+            id: `msg_assistant_${baseTimestampMs + 1}`,
             role: 'assistant',
             content: '',
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(baseTimestampMs + 1).toISOString(),
             isLoading: true,
         };
 
@@ -847,7 +946,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 contentType: 'html',
                 detected_language: response.detected_language || 'en',
                 isLoading: false,
-                timestamp: new Date().toISOString(),
+                timestamp: assistantPlaceholderMessage.timestamp,
                 audioData: null,
                 isAudioGenerating: isAudioResponseEnabled,
                 imageUrls: response.image_urls || [], // Add image URLs from response
@@ -895,7 +994,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 content: `<p><strong>Error:</strong> ${errorMessageContent}</p>`,
                 contentType: 'html',
                 isLoading: false,
-                timestamp: new Date().toISOString(),
+                timestamp: assistantPlaceholderMessage.timestamp,
                 audioData: null,
             };
 
@@ -1072,6 +1171,14 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [currentChatThreadId, user?.uid]);
 
     const loadChatThread = useCallback(async (threadId: string) => {
+        if (isBackendDeletionProcessing) {
+            toast({
+                title: "Please wait",
+                description: "Backend is finishing chat deletion. Try again in a moment.",
+            });
+            return;
+        }
+
         const thread = chatThreads.find(t => t.id === threadId);
         if (thread) {
             // FIX: Stop any currently playing audio (streaming chunks or combined) when switching sessions
@@ -1086,12 +1193,22 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             console.log(`🎵 Loading thread: ${threadId}, messages count: ${thread.messages.length}`);
 
         }
-    }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, streamingAudio]);
+    }, [chatThreads, isHistoryPanelOpen, setCurrentChatThreadId, setIsHistoryPanelOpen, streamingAudio, isBackendDeletionProcessing, toast]);
 
     const deleteChatThread = useCallback(async (threadId: string) => {
         if (!user?.uid) return;
+        if (isBackendDeletionProcessing) return;
 
+        setIsBackendDeletionProcessing(true);
         try {
+            const isDeletingCurrentThread = currentChatThreadId === threadId;
+            const remainingThreads = chatThreads.filter(t => t.id !== threadId);
+            const nextThreadId = isDeletingCurrentThread && remainingThreads.length > 0
+                ? [...remainingThreads].sort((a, b) =>
+                    new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
+                )[0].id
+                : null;
+
             const audioDeleted = await deleteSessionAudio(threadId, user.uid);
             if (!audioDeleted) {
                 toast({
@@ -1115,17 +1232,21 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 console.log('🔥 Deleted thread from Firestore:', threadId);
             }
 
-            // Switch to another thread if we deleted the current one
-            if (currentChatThreadId === threadId) {
-                const remainingThreads = chatThreads.filter(t => t.id !== threadId);
-                if (remainingThreads.length > 0) {
-                    const mostRecentThread = [...remainingThreads].sort((a, b) =>
-                        new Date(b.lastUpdatedAt).getTime() - new Date(a.lastUpdatedAt).getTime()
-                    )[0];
-                    setCurrentChatThreadId(mostRecentThread.id);
+            const backendReady = await waitForBackendAndConnectionAfterDeletion();
+            if (!backendReady) {
+                toast({
+                    title: "Backend still syncing",
+                    description: "Switching chat anyway, but responses may take a few seconds.",
+                });
+            }
+
+            // Switch to another thread only after backend readiness check completes
+            if (isDeletingCurrentThread) {
+                if (nextThreadId) {
+                    setCurrentChatThreadId(nextThreadId);
                 } else {
                     // No threads left, create a new one
-                    startNewChat();
+                    await startNewChat();
                 }
             }
         } catch (error) {
@@ -1135,8 +1256,10 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 description: "Failed to delete chat. Please try again.",
                 variant: "destructive",
             });
+        } finally {
+            setIsBackendDeletionProcessing(false);
         }
-    }, [user?.uid, currentChatThreadId, chatThreads, startNewChat, toast]);
+    }, [user?.uid, currentChatThreadId, chatThreads, startNewChat, toast, isBackendDeletionProcessing, waitForBackendAndConnectionAfterDeletion]);
 
     const clearChatHistory = useCallback(async () => {
         if (!user?.uid) return;
@@ -1217,6 +1340,8 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             activeChatThread,
             messages,
             isLoadingResponse,
+            isVoiceInputProcessing,
+            isBackendDeletionProcessing,
             isHistoryPanelOpen,
             isAudioResponseEnabled,
             toggleAudioResponse,
@@ -1281,6 +1406,7 @@ export const ChatProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             requestTTS,
             setAudioForMessage,
             setAudioGeneratingForMessage,
+            setVoiceInputProcessing: setIsVoiceInputProcessing,
             restoreAudioFromCache,
             connectChatterboxTTS: streamingAudio.connect,
             disconnectChatterboxTTS: streamingAudio.disconnect,
@@ -1297,4 +1423,5 @@ export const useChat = (): ChatContextType => {
     }
     return context;
 };
+
 

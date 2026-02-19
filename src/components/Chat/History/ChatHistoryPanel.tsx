@@ -37,7 +37,7 @@ interface ChatHistoryPanelProps {
 }
 
 export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps) {
-  const { chatThreads, currentChatThreadId, startNewChat, clearChatHistory, isHistoryPanelOpen, toggleHistoryPanel, deleteChatThread, loadChatThread } = useChat();
+  const { chatThreads, currentChatThreadId, startNewChat, clearChatHistory, isHistoryPanelOpen, toggleHistoryPanel, deleteChatThread, loadChatThread, isBackendDeletionProcessing } = useChat();
   const isMobile = useIsMobile();
   const [deleteThreadId, setDeleteThreadId] = useState<string | null>(null);
 
@@ -53,6 +53,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
             variant="ghost"
             size="icon"
             onClick={startNewChat}
+            disabled={isBackendDeletionProcessing}
             className="h-8 w-8 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
             aria-label="Start new chat"
           >
@@ -82,7 +83,10 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
                       ? 'bg-white shadow-sm border border-gray-200'
                       : 'hover:bg-white/60 hover:shadow-sm'
                     }`}
-                  onClick={() => loadChatThread(thread.id)}
+                  onClick={() => {
+                    if (isBackendDeletionProcessing) return;
+                    loadChatThread(thread.id);
+                  }}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">
@@ -105,6 +109,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={isBackendDeletionProcessing}
                           className="h-6 w-6 text-gray-400 hover:text-gray-600 hover:bg-gray-200"
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -125,6 +130,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
                         </DropdownMenuItem>
                         <DropdownMenuSeparator className="my-1" />
                         <DropdownMenuItem
+                          disabled={isBackendDeletionProcessing}
                           className="text-red-600 focus:text-red-600 text-sm px-2 py-1.5"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -151,6 +157,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
             <AlertDialogTrigger asChild>
               <Button
                 variant="ghost"
+                disabled={isBackendDeletionProcessing}
                 className="w-full justify-center gap-2 h-8 text-gray-500 hover:text-red-600 hover:bg-red-50 transition-all duration-200"
               >
                 <Trash className="h-4 w-4" />
@@ -167,6 +174,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
+                  disabled={isBackendDeletionProcessing}
                   onClick={clearChatHistory}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
@@ -228,6 +236,7 @@ export function ChatHistoryPanel({ isPopupMode = false }: ChatHistoryPanelProps)
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
+              disabled={isBackendDeletionProcessing}
               onClick={() => {
                 if (deleteThreadId) {
                   deleteChatThread(deleteThreadId);

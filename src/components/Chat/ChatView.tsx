@@ -7,6 +7,7 @@ import { MessageList } from './MessageList';
 import { ChatInputBar } from './ChatInputBar';
 import React, { useEffect, useRef } from 'react';
 import { ScrollArea } from '../ui/scroll-area'; // Import ScrollArea
+import { Loader2 } from 'lucide-react';
 
 interface ChatViewProps {
   isPopupMode?: boolean;
@@ -15,6 +16,8 @@ interface ChatViewProps {
 export function ChatView({ isPopupMode = false }: ChatViewProps) {
   const {
     messages,
+    isBackendDeletionProcessing,
+    isVoiceInputProcessing,
     chatbotRole,
     ttsProvider,
     ttsIsConnected,
@@ -36,8 +39,10 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
 
   // Scroll to bottom effect
   useEffect(() => {
-    const currentCount = messages.length;
-    const currentLastMessageId = currentCount > 0 ? messages[currentCount - 1].id : null;
+    const currentCount = messages.length + (isVoiceInputProcessing ? 1 : 0);
+    const currentLastMessageId = isVoiceInputProcessing
+      ? 'msg_user_voice_processing'
+      : (messages.length > 0 ? messages[messages.length - 1].id : null);
     const shouldAutoScroll =
       currentCount > prevMessageCountRef.current ||
       currentLastMessageId !== prevLastMessageIdRef.current;
@@ -48,7 +53,7 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
 
     prevMessageCountRef.current = currentCount;
     prevLastMessageIdRef.current = currentLastMessageId;
-  }, [messages]);
+  }, [messages, isVoiceInputProcessing]);
 
   return (
     <div className="flex flex-col h-full bg-white">
@@ -60,6 +65,14 @@ export function ChatView({ isPopupMode = false }: ChatViewProps) {
         {/* Messages area - clean and minimal */}
         <div className="flex-1 overflow-y-auto" ref={messagesContainerRef}>
           <div className="max-w-4xl mx-auto px-4 py-8 h-full">
+            {isBackendDeletionProcessing && (
+              <div className="mb-4 flex items-center justify-center">
+                <div className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Finalizing chat deletion. Reconnecting to backend...
+                </div>
+              </div>
+            )}
             {messages.length === 0 ? (
               /* Welcome screen - Minimalist Role Display */
               <div className="flex flex-col items-center justify-center h-full space-y-4">

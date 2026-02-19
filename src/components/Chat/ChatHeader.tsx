@@ -13,7 +13,7 @@ interface ChatHeaderProps {
 }
 
 export function ChatHeader({ isPopupMode = true }: ChatHeaderProps) {
-  const { toggleHistoryPanel, isHistoryPanelOpen, startNewChat } = useChat();
+  const { toggleHistoryPanel, isHistoryPanelOpen, startNewChat, isBackendDeletionProcessing } = useChat();
 
   return (
     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-white h-14 shrink-0 sticky top-0 z-20">
@@ -24,6 +24,7 @@ export function ChatHeader({ isPopupMode = true }: ChatHeaderProps) {
             variant="ghost"
             size="icon"
             onClick={toggleHistoryPanel}
+            disabled={isBackendDeletionProcessing}
             aria-label={isHistoryPanelOpen ? "Close history panel" : "Open history panel"}
             className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
           >
@@ -36,6 +37,7 @@ export function ChatHeader({ isPopupMode = true }: ChatHeaderProps) {
             variant="ghost"
             size="icon"
             onClick={startNewChat}
+            disabled={isBackendDeletionProcessing}
             aria-label="Start new chat"
             className="h-9 w-9 rounded-full text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-all duration-200"
           >
